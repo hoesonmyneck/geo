@@ -72,6 +72,9 @@ services:
       - geo_cache:/app/data/cache
       - geo_input:/app/data/input
       - geo_static:/geo-data
+      # Исходные GeoJSON для генерации границ районов/областей
+      - ./regions_polygon.json:/input/regions_polygon.json:ro
+      - ./raion_polygon.json:/input/raion_polygon.json:ro
 
   # -----------------------------------------------------------------
   # Caddy — reverse proxy + автоматический HTTPS
