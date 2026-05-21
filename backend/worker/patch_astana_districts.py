@@ -21,11 +21,15 @@ import httpx
 
 OUTPUT = Path("/geo-data")
 
-# Запрос: только Астана (L4) + её районы (L8)
-# bbox: S=50.8, W=71.0, N=51.55, E=72.1
-QUERY = """[out:json][timeout:120][bbox:50.8,71.0,51.55,72.1];
+# Запрос:
+#  1. Найти area «Астана» (admin_level=4 или 2 — городское значение)
+#  2. Получить L4 полигон города и L8 районы внутри него
+# Overpass area ID = relation ID + 3600000000
+QUERY = """[out:json][timeout:120];
+area["name"="Астана"]["boundary"="administrative"]->.city;
 (
-  relation["boundary"="administrative"]["admin_level"~"^[48]$"];
+  relation["boundary"="administrative"]["admin_level"~"^[24]$"]["name"~"[Аа]стана"];
+  relation["boundary"="administrative"]["admin_level"="8"](area.city);
 );
 out geom;"""
 
@@ -106,9 +110,13 @@ def main():
         bb      = feat["properties"]["bbox"]
         geom    = feat["geometry"]
 
-        if lvl == "4":
-            astana_city = {"name": name, "osm_id": osm_id, "bb": bb, "geom": geom}
-            print(f"  [L4] City: {name!r}  bbox={[round(x,2) for x in bb]}")
+        if lvl in ("2", "4") and any(t in name for t in ("Астана", "астана", "Нур-Султан", "Нұр-Сұлтан")):
+            # Берём наименьший bbox — это и есть сам город, а не область
+            if astana_city is None or (
+                (bb[2]-bb[0])*(bb[3]-bb[1]) < (astana_city["bb"][2]-astana_city["bb"][0])*(astana_city["bb"][3]-astana_city["bb"][1])
+            ):
+                astana_city = {"name": name, "osm_id": osm_id, "bb": bb, "geom": geom}
+            print(f"  [L{lvl}] City: {name!r}  bbox={[round(x,2) for x in bb]}")
         elif lvl == "8":
             norm_name = NAME_NORMALIZE.get(name, name)
             astana_dists.append({
