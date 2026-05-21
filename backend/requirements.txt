@@ -1,0 +1,37 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+geoalchemy2==0.17.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+
+# Data processing (worker)
+openpyxl==3.1.5
+httpx==0.27.2
+tenacity==9.0.0
+tqdm==4.67.1
+pyarrow==18.1.0
+rapidfuzz==3.10.1
+pandas==2.2.3
+
+# Config
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Fast JSON
+orjson==3.10.11
+
+# Form data
+python-multipart==0.0.19
+
+# Middleware
+slowapi==0.1.9

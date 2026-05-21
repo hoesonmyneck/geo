@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Геокодирование — Астана</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; overflow:hidden; }
+
+/* ── Экран авторизации ── */
+#auth-overlay {
+  position:fixed; inset:0; z-index:99999;
+  background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);
+  display:flex; align-items:center; justify-content:center;
+}
+#auth-box {
+  background:#1e293b; border:1px solid #334155; border-radius:16px;
+  padding:40px 48px; width:360px; box-shadow:0 25px 60px rgba(0,0,0,.5);
+}
+#auth-box h2 { color:#f1f5f9; font-size:22px; font-weight:700; margin-bottom:6px; text-align:center; }
+#auth-box p  { color:#64748b; font-size:13px; text-align:center; margin-bottom:28px; }
+.auth-field { margin-bottom:16px; }
+.auth-field label { display:block; color:#94a3b8; font-size:12px; font-weight:600;
+  letter-spacing:.05em; text-transform:uppercase; margin-bottom:6px; }
+.auth-field input {
+  width:100%; padding:10px 14px; background:#0f172a; border:1px solid #334155;
+  border-radius:8px; color:#f1f5f9; font-size:14px; outline:none; transition:border-color .2s;
+}
+.auth-field input:focus { border-color:#3b82f6; }
+#auth-btn {
+  width:100%; padding:12px; margin-top:8px;
+  background:#3b82f6; color:#fff; font-size:15px; font-weight:600;
+  border:none; border-radius:8px; cursor:pointer; transition:background .2s;
+}
+#auth-btn:hover { background:#2563eb; }
+#auth-error { color:#f87171; font-size:13px; text-align:center; margin-top:12px; min-height:18px; }
+
+/* ── Сайдбар ── */
+#sidebar {
+  position:fixed; top:0; left:0; width:264px; height:100%;
+  background:#fff; border-right:1px solid #e2e8f0;
+  overflow-y:auto; z-index:1000;
+  display:flex; flex-direction:column;
+}
+#sidebar-header {
+  padding:13px 16px; background:#1e293b; color:#fff;
+  font-size:14px; font-weight:600; letter-spacing:.2px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:space-between;
+}
+#sidebar-header span { font-size:12px; font-weight:400; color:#94a3b8; cursor:pointer; }
+#sidebar-header span:hover { color:#e2e8f0; }
+
+/* ── Карта ── */
+#map { position:absolute; top:0; left:264px; right:0; bottom:0; }
+
+/* ── Секции сайдбара ── */
+.s-head {
+  padding:8px 14px; font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.6px;
+  color:#64748b; background:#f8fafc;
+  border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0;
+  display:flex; justify-content:space-between; align-items:center;
+  cursor:pointer; user-select:none; flex-shrink:0;
+}
+.s-head:hover { background:#f1f5f9; }
+.s-body { padding:8px 14px 10px; flex-shrink:0; }
+.s-body.hidden { display:none; }
+
+/* ── Уверенность ── */
+.conf-item {
+  display:flex; align-items:center; padding:5px 6px 5px 0;
+  font-size:13px; color:#374151; cursor:pointer; border-radius:4px;
+  transition:opacity .15s;
+}
+.conf-item:hover { background:#f8fafc; }
+.conf-item.off { opacity:.28; }
+.dot {
+  display:inline-block; width:10px; height:10px;
+  border-radius:50%; margin-right:8px; flex-shrink:0;
+}
+
+/* ── Категории ── */
+.cat-item {
+  display:flex; align-items:center; padding:4px 0;
+  font-size:13px; color:#374151; cursor:pointer; line-height:1.3;
+}
+.cat-item input[type=checkbox] {
+  margin-right:8px; cursor:pointer; width:14px; height:14px;
+  accent-color:#6366f1; flex-shrink:0;
+}
+.cat-hint { font-size:11px; color:#94a3b8; margin-bottom:6px; }
+
+/* ── Районы ── */
+.dist-item {
+  display:flex; align-items:center; padding:5px 0;
+  font-size:13px; color:#374151; cursor:pointer;
+}
+.dist-item input[type=radio] {
+  margin-right:8px; cursor:pointer; width:14px; height:14px;
+  accent-color:#0891b2; flex-shrink:0;
+}
+
+/* ── Ссылка-сброс ── */
+.clear-link {
+  font-size:11px; color:#94a3b8; cursor:pointer; text-decoration:underline;
+  text-decoration-style:dotted;
+}
+.clear-link:hover { color:#475569; }
+
+/* ── Кнопки действий ── */
+.action-btn {
+  display:block; width:100%; padding:8px 12px; margin-top:6px;
+  border-radius:6px; border:1px solid #e2e8f0; background:#fff;
+  color:#374151; font-size:13px; cursor:pointer; text-align:left;
+  transition:background .15s;
+}
+.action-btn:hover { background:#f1f5f9; }
+.action-btn.primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+.action-btn.primary:hover { background:#2563eb; }
+
+/* ── Маркеры ── */
+.bld {
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:700;
+  border:2px solid rgba(255,255,255,.85);
+  box-shadow:0 1px 5px rgba(0,0,0,.35);
+}
+.cls {
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:700;
+  border:3px solid rgba(255,255,255,.9);
+  box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+
+/* ── Панель итогов (правый верх) ── */
+#stats-panel {
+  position:fixed; top:12px; right:12px; z-index:999;
+  background:#fff; border-radius:8px;
+  box-shadow:0 2px 10px rgba(0,0,0,.16);
+  padding:10px 14px; font-size:13px; line-height:1.75;
+}
+
+/* ── Панель статистики выделенной области ── */
+#sel-panel {
+  position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  z-index:1001; background:#1e293b; color:#e2e8f0;
+  border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.38);
+  padding:14px 20px 14px 16px; font-size:13px; line-height:1.7;
+  min-width:290px; max-width:460px; display:none;
+}
+#sel-panel .sel-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#94a3b8; margin-bottom:8px; }
+#sel-panel .sel-close { position:absolute; top:10px; right:12px; cursor:pointer; color:#64748b; font-size:18px; line-height:1; }
+#sel-panel .sel-close:hover { color:#e2e8f0; }
+#sel-panel table { width:100%; border-collapse:collapse; }
+#sel-panel td:first-child { color:#94a3b8; padding-right:12px; white-space:nowrap; }
+#sel-panel td:last-child { font-weight:700; color:#f1f5f9; }
+#sel-panel hr { border:none; border-top:1px solid #334155; margin:5px 0; }
+
+/* ── Подсказка выбора на карте ── */
+#map-pick-hint {
+  display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%);
+  background:#1e293b; color:#f1f5f9; padding:10px 20px; border-radius:8px;
+  z-index:4000; font-size:13px; box-shadow:0 4px 20px rgba(0,0,0,.4);
+  border:1px solid #334155;
+}
+
+/* ── Листинг кластеров ── */
+#clust-body { font-size:12px; color:#64748b; line-height:2; }
+
+/* Кнопка инструментов рисования */
+.leaflet-draw-toolbar { margin-top:80px; }
+
+/* Убираем стандартный чёрный квадрат браузера при клике на полигон */
+.leaflet-interactive:focus,
+.leaflet-interactive:focus-visible { outline: none !important; }
+
+/* Пульсация выбранного района/области */
+@keyframes districtPulse {
+  0%,100% { stroke-width: 2px;  stroke-opacity: 0.85; }
+  45%     { stroke-width: 7px;  stroke-opacity: 1;    }
+}
+@keyframes oblastPulse {
+  0%,100% { stroke-width: 3px;  stroke-opacity: 0.9; }
+  45%     { stroke-width: 9px;  stroke-opacity: 1;   }
+}
+.district-selected { animation: districtPulse 0.8s ease-in-out 10 forwards; }
+.oblast-selected   { animation: oblastPulse   0.8s ease-in-out 10 forwards; }
+/* Переключатель слоёв */
+.leaflet-top.leaflet-right .leaflet-control-layers { margin-top:160px; }
+
+/* ── Модальное окно ── */
+.modal-overlay {
+  display:none; position:fixed; inset:0;
+  background:rgba(15,23,42,.55); z-index:5000;
+  align-items:center; justify-content:center;
+}
+.modal-overlay.open { display:flex; }
+.modal-box {
+  background:#fff; border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);
+  display:flex; flex-direction:column;
+  max-height:85vh;
+}
+.modal-header {
+  padding:16px 20px; border-bottom:1px solid #e2e8f0;
+  display:flex; align-items:center; gap:10px;
+}
+.modal-header h3 { flex:1; font-size:15px; font-weight:700; color:#0f172a; }
+.modal-header button { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px; line-height:1; }
+.modal-header button:hover { color:#475569; }
+.modal-controls {
+  padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  border-bottom:1px solid #e2e8f0; background:#f8fafc;
+}
+.modal-controls input, .modal-controls select {
+  padding:6px 10px; background:#fff; border:1px solid #e2e8f0;
+  border-radius:6px; color:#374151; font-size:13px; outline:none;
+}
+.modal-controls input { flex:1; min-width:160px; }
+.modal-controls input:focus, .modal-controls select:focus { border-color:#3b82f6; }
+.modal-table-wrap { flex:1; overflow-y:auto; }
+.modal-table { width:100%; border-collapse:collapse; font-size:13px; }
+.modal-table th {
+  position:sticky; top:0; background:#f8fafc; padding:8px 12px;
+  text-align:left; color:#64748b; font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.4px;
+  border-bottom:1px solid #e2e8f0;
+}
+.modal-table td { padding:7px 12px; border-bottom:1px solid #f1f5f9; color:#374151; }
+.modal-table tr:hover td { background:#f8fafc; }
+.conf-badge {
+  padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;
+}
+.conf-badge.high   { background:#dcfce7; color:#166534; }
+.conf-badge.medium { background:#fef9c3; color:#854d0e; }
+.conf-badge.low    { background:#ffedd5; color:#9a3412; }
+.conf-badge.miss   { background:#fee2e2; color:#991b1b; }
+.list-action {
+  background:none; border:1px solid #e2e8f0; border-radius:4px;
+  color:#3b82f6; font-size:12px; padding:2px 8px; cursor:pointer;
+  transition:background .15s;
+}
+.list-action:hover { background:#eff6ff; }
+.modal-pagination {
+  padding:10px 16px; display:flex; justify-content:space-between; align-items:center;
+  border-top:1px solid #e2e8f0; font-size:13px; color:#64748b;
+}
+.pag-btn {
+  padding:4px 12px; border:1px solid #e2e8f0; border-radius:6px;
+  background:#fff; color:#374151; cursor:pointer; font-size:13px;
+}
+.pag-btn:hover { background:#f8fafc; }
+
+/* ── Окно координат ── */
+.coord-box {
+  background:#fff; border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);
+  padding:28px; width:400px; max-width:95vw;
+}
+.coord-box h3 { font-size:15px; font-weight:700; color:#0f172a; margin-bottom:16px; }
+.coord-box label { display:block; font-size:12px; font-weight:600; color:#64748b;
+  text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; margin-top:14px; }
+.coord-box input, .coord-box textarea {
+  width:100%; padding:8px 12px; background:#fff; border:1px solid #e2e8f0;
+  border-radius:6px; color:#374151; font-size:13px; outline:none;
+}
+.coord-box input:focus, .coord-box textarea:focus { border-color:#3b82f6; }
+.coord-box .btn-row { display:flex; gap:8px; margin-top:20px; }
+.coord-box .btn-row button { flex:1; padding:9px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; border:1px solid #e2e8f0; }
+.coord-box .btn-row .btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+.coord-box .btn-row .btn-primary:hover { background:#2563eb; }
+.coord-box .btn-row .btn-secondary { background:#fff; color:#374151; }
+.coord-box .btn-row .btn-secondary:hover { background:#f8fafc; }
+
+/* ── Попап карты ── */
+.geo-popup { min-width:220px; font-size:13px; }
+.geo-popup h4 { margin-bottom:6px; font-size:14px; color:#0f172a; }
+.geo-popup table { width:100%; border-collapse:collapse; }
+.geo-popup td { padding:2px 4px; font-size:12px; }
+.geo-popup td:first-child { color:#64748b; }
+.geo-popup td:last-child { font-weight:600; color:#0f172a; text-align:right; }
+.geo-popup .conf-line { margin-bottom:6px; font-size:12px; }
+.geo-popup .coords { margin-top:5px; font-size:11px; color:#94a3b8; }
+.geo-popup .edit-btn {
+  margin-top:8px; width:100%; padding:6px; background:#3b82f6;
+  color:#fff; border:none; border-radius:5px; cursor:pointer; font-size:12px; font-weight:600;
+}
+.geo-popup .edit-btn:hover { background:#2563eb; }
+</style>
+</head>
+<body>
+
+<!-- Экран авторизации -->
+<div id="auth-overlay">
+  <div id="auth-box">
+    <h2>Карта</h2>
+    <p>Введите данные для входа</p>
+    <div class="auth-field">
+      <label>Логин</label>
+      <input type="text" id="auth-login" placeholder="Логин" autocomplete="username"/>
+    </div>
+    <div class="auth-field">
+      <label>Пароль</label>
+      <input type="password" id="auth-pass" placeholder="Пароль" autocomplete="current-password"/>
+    </div>
+    <button id="auth-btn" onclick="doLogin()">Войти</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<!-- Сайдбар -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    Карта
+    <span id="user-label" onclick="doLogout()"></span>
+  </div>
+
+  <!-- 1. Инструменты -->
+  <div class="s-head" onclick="toggleSection('tools')">
+    Инструменты <span id="tools-arr">&#9660;</span>
+  </div>
+  <div id="tools-body" class="s-body">
+    <button class="action-btn" onclick="openListModal()">Список адресов</button>
+    <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
+    <label class="cat-item" style="margin-top:6px">
+      <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
+      Скрыть точки
+    </label>
+    <div id="dist-legend" style="display:none;margin-top:6px;font-size:11px;line-height:1.9"></div>
+    <div style="margin-top:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px">Выбрать область</div>
+    <div style="display:flex;gap:4px">
+      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('rect')" title="Прямоугольник">&#9645; Квадрат</button>
+      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('circle')" title="Круг">&#9711; Круг</button>
+      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('polygon')" title="Полигон">&#9649; Полигон</button>
+    </div>
+    <button class="action-btn" id="draw-clear-btn" style="display:none;margin-top:4px" onclick="clearDraw()">Очистить область</button>
+    <div id="admin-tools" style="display:none;margin-top:4px">
+      <button class="action-btn primary" onclick="openImportModal()" style="margin-bottom:4px">Загрузить данные (xlsx)</button>
+      <button class="action-btn" onclick="openUsersModal()" style="width:100%">Управление пользователями</button>
+    </div>
+  </div>
+
+  <!-- 2. Категории жителей -->
+  <div class="s-head" onclick="toggleSection('cats')">
+    Категории жителей <span id="cats-arr">&#9660;</span>
+  </div>
+  <div id="cats-body" class="s-body">
+    <div class="cat-hint">Показывать дома где есть хотя бы один житель выбранной категории (можно несколько)</div>
+    <label class="cat-item"><input type="checkbox" value="lsi">        ЛСИ (лица с инвалидностью)</label>
+    <label class="cat-item"><input type="checkbox" value="asp">        АСП</label>
+    <label class="cat-item"><input type="checkbox" value="deti_do18"> Дети до 18</label>
+    <label class="cat-item"><input type="checkbox" value="trud_vozrast"> Труд. возраст</label>
+    <label class="cat-item"><input type="checkbox" value="working">    Работающие</label>
+    <label class="cat-item"><input type="checkbox" value="student">    Студенты</label>
+    <label class="cat-item"><input type="checkbox" value="pensioners"> Пенсионеры</label>
+    <label class="cat-item"><input type="checkbox" value="ip">         ИП</label>
+    <label class="cat-item"><input type="checkbox" value="kandas">     КАНДАС</label>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="clearCats()">Сбросить</span>
+    </div>
+  </div>
+
+  <!-- 3. Районы (заполняется динамически при смене региона) -->
+  <div class="s-head" onclick="toggleSection('dists')">
+    Районы <span id="dists-region-label" style="font-weight:400;color:#94a3b8;font-size:11px"></span>
+    <span id="dists-arr">&#9660;</span>
+  </div>
+  <div id="dists-body" class="s-body">
+    <label class="dist-item"><input type="radio" name="dist" value="all" checked onchange="applyDistrict()"> Все районы</label>
+    <div style="margin-top:6px;font-size:11px;color:#94a3b8">Переместитесь к региону</div>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="clearDists()">Показать все районы</span>
+    </div>
+  </div>
+
+  <!-- 4. Уверенность -->
+  <div class="s-head" onclick="toggleSection('conf')">
+    Уверенность (дом) <span id="conf-arr">&#9660;</span>
+  </div>
+  <div id="conf-body" class="s-body">
+    <div class="conf-item" data-conf="high"   onclick="toggleConf('high')">
+      <span class="dot" style="background:#22c55e"></span>Точный адрес (high)
+    </div>
+    <div class="conf-item" data-conf="medium" onclick="toggleConf('medium')">
+      <span class="dot" style="background:#f59e0b"></span>Найдена улица (medium)
+    </div>
+    <div class="conf-item" data-conf="low"    onclick="toggleConf('low')">
+      <span class="dot" style="background:#f97316"></span>Нечеткое (low)
+    </div>
+    <div class="conf-item" data-conf="miss"   onclick="toggleConf('miss')">
+      <span class="dot" style="background:#ef4444"></span>Не найдено
+    </div>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="resetConf()">Показать все</span>
+    </div>
+  </div>
+
+  <!-- 5. Цвет кластера — прижат к низу -->
+  <div style="flex:1"></div>
+  <div class="s-head" onclick="toggleSection('clust')" style="border-top:1px solid #e2e8f0">
+    Цвет кластера <span id="clust-arr">&#9660;</span>
+  </div>
+  <div id="clust-body" class="s-body">
+    <span class="dot" style="background:#22c55e"></span>&lt; 100 чел.<br>
+    <span class="dot" style="background:#059669"></span>100 — 999<br>
+    <span class="dot" style="background:#0891b2"></span>1 000 — 9 999<br>
+    <span class="dot" style="background:#2563eb"></span>10 000+<br>
+    <span style="font-size:11px;color:#94a3b8">Цифра = количество человек</span>
+  </div>
+</div>
+
+<!-- Карта -->
+<div id="map"></div>
+
+<!-- Панель итогов (правый верх) -->
+<div id="stats-panel" style="display:none">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <div id="st-region" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#3b82f6;flex:1"></div>
+    <select id="goto-region" onchange="gotoRegion(this)" style="font-size:11px;padding:2px 6px;border:1px solid #e2e8f0;border-radius:4px;color:#374151;background:#fff;cursor:pointer;max-width:160px">
+      <option value="">Перейти к области...</option>
+      <option value="Астана">Астана</option>
+      <option value="Алматы">Алматы</option>
+      <option value="Шымкент">Шымкент</option>
+      <option value="Карагандинская обл.">Карагандинская обл.</option>
+      <option value="Актюбинская обл.">Актюбинская обл.</option>
+      <option value="Павлодарская обл.">Павлодарская обл.</option>
+      <option value="Костанайская обл.">Костанайская обл.</option>
+      <option value="ВКО">ВКО</option>
+      <option value="Жамбылская обл.">Жамбылская обл.</option>
+      <option value="Кызылординская обл.">Кызылординская обл.</option>
+      <option value="Атырауская обл.">Атырауская обл.</option>
+      <option value="ЗКО">ЗКО</option>
+      <option value="СКО">СКО</option>
+      <option value="Мангистауская обл.">Мангистауская обл.</option>
+      <option value="Туркестанская обл.">Туркестанская обл.</option>
+      <option value="Акмолинская обл.">Акмолинская обл.</option>
+      <option value="Алматинская обл.">Алматинская обл.</option>
+    </select>
+  </div>
+  <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b>Людей:</b> <span id="st-people">0</span><br>
+  <span id="st-user" style="font-size:12px;color:#64748b"></span>
+</div>
+
+<!-- Панель статистики выделенной области -->
+<div id="sel-panel">
+  <div class="sel-title">Статистика области</div>
+  <span class="sel-close" onclick="closeSel()">&#x2715;</span>
+  <table id="sel-table"></table>
+</div>
+
+<!-- Подсказка режима выбора на карте -->
+<div id="map-pick-hint">Кликните на карте чтобы задать координату — Esc для отмены</div>
+
+<!-- ── Модальное окно: список адресов ── -->
+<div class="modal-overlay" id="list-modal">
+  <div class="modal-box" style="width:800px;max-width:95vw">
+    <div class="modal-header">
+      <h3>Список адресов</h3>
+      <button onclick="closeListModal()">&#x2715;</button>
+    </div>
+    <div class="modal-controls">
+      <input id="list-search" type="text" placeholder="Поиск по улице..." oninput="debounceList()" style="min-width:200px"/>
+      <select id="list-conf" onchange="listLoad()">
+        <option value="">Все уровни</option>
+        <option value="high">Точный (high)</option>
+        <option value="medium">Улица (medium)</option>
+        <option value="low">Нечеткое (low)</option>
+        <option value="miss">Не найдено</option>
+      </select>
+      <select id="list-city" onchange="onListCityChange()" style="min-width:160px">
+        <option value="">Все области</option>
+      </select>
+      <select id="list-rainame" onchange="listLoad()" style="min-width:160px">
+        <option value="">Все районы</option>
+      </select>
+    </div>
+    <div class="modal-table-wrap">
+      <table class="modal-table">
+        <thead><tr>
+          <th>Адрес</th>
+          <th>Область</th>
+          <th>Район</th>
+          <th>Координаты</th>
+          <th>Уверенность</th>
+          <th>Жителей</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="list-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-pagination">
+      <span id="list-info">—</span>
+      <div style="display:flex;gap:6px">
+        <button class="pag-btn" onclick="listPrev()">&#x2190; Назад</button>
+        <button class="pag-btn" onclick="listNext()">Вперёд &#x2192;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: редактирование координат ── -->
+<div class="modal-overlay" id="coord-modal">
+  <div class="coord-box">
+    <h3 id="coord-title">Задать координаты</h3>
+    <label>Широта (lat)</label>
+    <input id="coord-lat" type="number" step="0.000001" placeholder="51.18"/>
+    <label>Долгота (lon)</label>
+    <input id="coord-lon" type="number" step="0.000001" placeholder="71.44"/>
+    <label>Причина изменения</label>
+    <textarea id="coord-reason" rows="2" placeholder="Необязательно"></textarea>
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="startMapPick()">Указать на карте</button>
+      <button class="btn-primary" onclick="saveCoords()">Сохранить</button>
+      <button class="btn-secondary" onclick="closeCoordModal()">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: управление пользователями (для admin) ── -->
+<div class="modal-overlay" id="users-modal">
+  <div class="coord-box" style="width:500px;max-height:80vh;overflow-y:auto">
+    <h3>Пользователи</h3>
+
+    <!-- Форма создания -->
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#374151">Новый пользователь</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Логин</label>
+          <input id="nu-login" type="text" placeholder="login" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Пароль</label>
+          <input id="nu-pass" type="password" placeholder="••••••" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
+        <div>
+          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Роль</label>
+          <select id="nu-role" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+            <option value="viewer">viewer — только просмотр</option>
+            <option value="editor">editor — может редактировать координаты</option>
+            <option value="admin">admin — полный доступ</option>
+          </select>
+        </div>
+        <button onclick="createUser()" style="white-space:nowrap;padding:7px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Создать</button>
+      </div>
+      <div id="nu-status" style="margin-top:8px;font-size:12px;min-height:16px"></div>
+    </div>
+
+    <!-- Список пользователей -->
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#374151">Существующие пользователи</div>
+    <div id="users-list" style="font-size:13px"></div>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn-secondary" onclick="closeUsersModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: импорт (для admin) ── -->
+<div class="modal-overlay" id="import-modal">
+  <div class="coord-box" style="width:440px">
+    <h3>Загрузка данных</h3>
+    <label>Файл (.xlsx)</label>
+    <input id="import-file" type="file" accept=".xlsx" style="border:1px solid #e2e8f0;padding:6px;border-radius:6px"/>
+    <label>Тип объектов</label>
+    <select id="import-kind" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+      <option value="house">Жилые дома</option>
+      <option value="school">Школы</option>
+      <option value="hospital">Больницы</option>
+      <option value="other">Другое</option>
+    </select>
+    <div id="import-status" style="margin-top:10px;font-size:12px;color:#64748b;min-height:18px"></div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="doImport()">Загрузить</button>
+      <button class="btn-secondary" onclick="closeImportModal()">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+//  Конфиг
+// ═══════════════════════════════════════════════════════
+const API   = '';
+const ASTANA = [51.18, 71.44];
+const ZOOM   = 12;
+const LIST_LIMIT = 50;
+
+// ═══════════════════════════════════════════════════════
+//  Состояние
+// ═══════════════════════════════════════════════════════
+let currentUser  = null;
+let map          = null;
+let clusterGroup = null;
+let allPlaces    = [];
+
+let activeConf = new Set(['high','medium','low']);
+let activeCats = new Set();
+let activeDistrict = 'all';
+
+let drawLayer    = null;
+let editingId    = null;
+let pickingCoord = false;
+let listOffset   = 0;
+let listTimer    = null;
+
+// ═══════════════════════════════════════════════════════
+//  Auth
+// ═══════════════════════════════════════════════════════
+async function doLogin() {
+  const login = document.getElementById('auth-login').value.trim();
+  const pass  = document.getElementById('auth-pass').value;
+  document.getElementById('auth-error').textContent = '';
+  try {
+    const r = await fetch(`${API}/api/auth/login`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({login, password: pass}),
+    });
+    if (!r.ok) { document.getElementById('auth-error').textContent = 'Неверный логин или пароль'; return; }
+    currentUser = await r.json();
+    startApp();
+  } catch(e) {
+    document.getElementById('auth-error').textContent = 'Ошибка сети: ' + e.message;
+  }
+}
+document.getElementById('auth-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.getElementById('auth-login').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+async function checkAuth() {
+  try {
+    const r = await fetch(`${API}/api/auth/me`, {credentials:'include'});
+    if (r.ok) { currentUser = await r.json(); startApp(); }
+  } catch {}
+}
+
+async function doLogout() {
+  await fetch(`${API}/api/auth/logout`, {method:'POST', credentials:'include'});
+  location.reload();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Старт
+// ═══════════════════════════════════════════════════════
+function startApp() {
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('stats-panel').style.display = 'block';
+  document.getElementById('user-label').textContent = currentUser.login + ' ✕';
+  if (currentUser.role === 'admin') {
+    document.getElementById('admin-tools').style.display = 'block';
+  }
+  initMap();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Карта
+// ═══════════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map').setView(ASTANA, ZOOM);
+
+  const baseLayers = {
+    'Стандарт':   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM', maxZoom:19}),
+    'Светлая':    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution:'© CartoDB', maxZoom:19}),
+    'Тёмная':     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {attribution:'© CartoDB', maxZoom:19}),
+    'Спутник':    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'© Esri', maxZoom:18}),
+    'Рельеф':     L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopoMap', maxZoom:17}),
+  };
+  baseLayers['Стандарт'].addTo(map);
+  L.control.layers(baseLayers, {}, {position:'topright', collapsed:true}).addTo(map);
+
+  clusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 60,
+    iconCreateFunction: clusterIcon,
+  });
+  map.addLayer(clusterGroup);
+
+  map.on('moveend zoomend', () => updateViewStats(null));
+  map.on('zoomend', _onMapMoveForDistricts);        // переключение область/район
+  map.on('moveend', _scheduleDistrictsRedraw);       // панорамирование — показываем новые районы
+
+  initDraw();
+  loadPlaces();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Динамическая статистика по текущему виду карты
+// ═══════════════════════════════════════════════════════
+
+// Сопоставление: паттерн (startsWith) → человекочитаемое название региона
+// Ключи — верхний регистр, совпадают с city в places.json
+const CITY_REGION_MAP = [
+  [['АСТАНА', 'НУР-СУЛТАН'],          'Астана'],
+  [['АЛМАТЫ', 'АЛМА-АТА'],            'Алматы'],
+  [['ШЫМКЕНТ'],                        'Шымкент'],
+  [['КАРАГАНДИНСКАЯ', 'КАРАГАНДA', 'КАРАГАНДА', 'КАРКАРАЛИНСК',
+    'ТЕМИРТАУ', 'БАЛХАШ', 'ЖЕЗКАЗГАН', 'ЖЕЗҚАЗҒАН',
+    'АБАЙСК', 'САРАНЬ', 'ШАХТИНСК', 'САТПАЕВ',
+    'ПРИОЗЕРСК', 'НУРИНСК', 'ОСАКАРОВСК', 'ШЕТСК',
+    'АКТОГАЙСК', 'БУХАР-ЖЫРАУСК'],    'Карагандинская обл.'],
+  [['АКТОБЕ', 'АКТЮБИНСК'],           'Актюбинская обл.'],
+  [['ПАВЛОДАР', 'ЭКИБАСТУЗ'],         'Павлодарская обл.'],
+  [['КОСТАНАЙ', 'РУДНЫЙ'],            'Костанайская обл.'],
+  [['УСТЬ-КАМЕНОГОРСК', 'СЕМЕЙ', 'РИДДЕР'], 'ВКО'],
+  [['ТАРАЗ'],                          'Жамбылская обл.'],
+  [['КЫЗЫЛОРДА'],                      'Кызылординская обл.'],
+  [['АТЫРАУ'],                         'Атырауская обл.'],
+  [['УРАЛЬСК'],                        'ЗКО'],
+  [['ПЕТРОПАВЛОВСК'],                  'СКО'],
+  [['АКТАУ'],                          'Мангистауская обл.'],
+  [['ТУРКЕСТАН'],                      'Туркестанская обл.'],
+  [['КОКШЕТАУ'],                       'Акмолинская обл.'],
+  [['ТАЛДЫКОРГАН'],                    'Алматинская обл.'],
+];
+
+// Нормализация строки для сравнения: убираем артефакты кодировки
+function _normStr(s) {
+  return s.trim().toUpperCase()
+    .replace(/[Aa]/g, '\u0410')   // Latin A/a → Cyrillic А
+    .replace(/[Ee]/g, '\u0415')   // Latin E/e → Cyrillic Е
+    .replace(/[Oo]/g, '\u041E')   // Latin O/o → Cyrillic О
+    .replace(/[Cc]/g, '\u0421')   // Latin C/c → Cyrillic С
+    .replace(/[Xx]/g, '\u0425')   // Latin X/x → Cyrillic Х
+    .replace(/[Pp]/g, '\u0420')   // Latin P/p → Cyrillic Р
+    .replace(/[Mm]/g, '\u041C');  // Latin M/m → Cyrillic М
+}
+
+function _regionFromCity(cityRaw) {
+  if (!cityRaw) return null;
+  const upper = _normStr(cityRaw);
+  for (const [cities, region] of CITY_REGION_MAP) {
+    if (cities.some(c => upper === _normStr(c) || upper.startsWith(_normStr(c)))) return region;
+  }
+  return cityRaw.trim().charAt(0).toUpperCase() + cityRaw.trim().slice(1).toLowerCase();
+}
+
+// Агрегаты по регионам, вычисляются один раз после загрузки мест
+// { 'Астана': { houses: N, people: N }, 'Карагандинская обл.': {...}, ... }
+let regionAggregates = {};
+// Общий итог по всему набору данных
+let totalAggregate = { houses: 0, people: 0 };
+// Словарь: regionLabel → отсортированный массив уникальных rainame
+let regionRainameMap = {};
+// Текущий определённый регион (для дедупликации перерисовки панели)
+let currentDetectedRegion = null;
+
+function buildRegionAggregates() {
+  regionAggregates = {};
+  totalAggregate   = { houses: 0, people: 0 };
+  regionRainameMap = {};
+  for (const p of allPlaces) {
+    if (p.lat == null) continue;
+    const region = _regionFromCity(p.city) || 'Прочее';
+    if (!regionAggregates[region]) {
+      regionAggregates[region] = { houses: 0, people: 0 };
+      regionRainameMap[region] = new Set();
+    }
+    regionAggregates[region].houses++;
+    regionAggregates[region].people += (p.stats && p.stats.total) || 0;
+    totalAggregate.houses++;
+    totalAggregate.people += (p.stats && p.stats.total) || 0;
+    const rn = p.stats?.rainame;
+    if (rn) regionRainameMap[region].add(rn);
+  }
+  // Конвертируем Set → отсортированный массив
+  for (const r in regionRainameMap) {
+    regionRainameMap[r] = [...regionRainameMap[r]].sort((a, b) => a.localeCompare(b, 'ru'));
+  }
+}
+
+// Перестраивает панель "Районы" под текущий регион
+function updateDistrictPanel(regionLabel) {
+  if (regionLabel === currentDetectedRegion) return;
+  currentDetectedRegion = regionLabel;
+
+  // Сбрасываем фильтр при смене региона
+  activeDistrict = 'all';
+
+  const body   = document.getElementById('dists-body');
+  const badge  = document.getElementById('dists-region-label');
+  const rainames = (regionLabel && regionRainameMap[regionLabel]) || [];
+
+  // Обновляем подпись в заголовке секции
+  if (badge) badge.textContent = regionLabel && rainames.length ? `— ${regionLabel}` : '';
+
+  let html = '<label class="dist-item"><input type="radio" name="dist" value="all" checked onchange="applyDistrict()"> Все районы</label>';
+
+  if (rainames.length) {
+    for (const rn of rainames) {
+      // Убираем префикс "район " для читабельности
+      const display = rn.startsWith('район ') ? rn.slice(6) : rn;
+      html += `<label class="dist-item"><input type="radio" name="dist" value="${rn}" onchange="applyDistrict()"> ${display}</label>`;
+    }
+  } else {
+    html += '<div style="margin-top:4px;font-size:11px;color:#94a3b8">Данных по районам нет</div>';
+  }
+
+  html += '<div style="margin-top:6px"><span class="clear-link" onclick="clearDists()">Показать все районы</span></div>';
+  body.innerHTML = html;
+}
+
+// filteredList — передаётся из renderPlaces при активных фильтрах.
+// null — при moveend/zoomend, показываем агрегат по всему региону.
+function updateViewStats(filteredList) {
+  if (!allPlaces || !allPlaces.length || !map) return;
+  const zoom = map.getZoom();
+  const bounds = map.getBounds();
+  const hasFilters = activeCats.size > 0 || activeDistrict !== 'all' ||
+    !(activeConf.has('high') && activeConf.has('medium') && activeConf.has('low') && activeConf.has('miss'));
+
+  // ── Режим с активными фильтрами: показываем отфильтрованные данные по viewport ──
+  if (hasFilters && filteredList) {
+    const pool = zoom < 7
+      ? filteredList
+      : filteredList.filter(p => p.lat != null && bounds.contains([p.lat, p.lon]));
+    if (!pool.length) return;
+    const regionCount = {};
+    for (const p of pool) {
+      const r = _regionFromCity(p.city) || 'Прочее';
+      regionCount[r] = (regionCount[r] || 0) + 1;
+    }
+    const sorted = Object.entries(regionCount).sort((a, b) => b[1] - a[1]);
+    const topShare = sorted[0][1] / pool.length;
+    const label = (sorted.length === 1 || topShare > 0.7)
+      ? sorted[0][0]
+      : sorted.length <= 3 ? sorted.map(e => e[0]).join(' / ') : 'Несколько регионов';
+    const people = pool.reduce((s, p) => s + ((p.stats && p.stats.total) || 0), 0);
+    document.getElementById('st-region').textContent = label + ' (фильтр)';
+    document.getElementById('st-total').textContent = pool.length.toLocaleString('ru');
+    document.getElementById('st-people').textContent = people.toLocaleString('ru');
+    return;
+  }
+
+  // ── Основной режим: определяем регион по viewport, показываем агрегат по всему региону ──
+  if (zoom < 7) {
+    document.getElementById('st-region').textContent = 'Казахстан — все данные';
+    document.getElementById('st-total').textContent = totalAggregate.houses.toLocaleString('ru');
+    document.getElementById('st-people').textContent = totalAggregate.people.toLocaleString('ru');
+    updateDistrictPanel(null);
+    return;
+  }
+
+  // Определяем доминирующий регион по точкам в viewport
+  const inView = allPlaces.filter(p => p.lat != null && bounds.contains([p.lat, p.lon]));
+  if (!inView.length) return;
+
+  const regionCount = {};
+  for (const p of inView) {
+    const r = _regionFromCity(p.city) || 'Прочее';
+    regionCount[r] = (regionCount[r] || 0) + 1;
+  }
+  const sorted = Object.entries(regionCount).sort((a, b) => b[1] - a[1]);
+  const topShare = sorted[0][1] / inView.length;
+
+  let label, agg;
+  if (sorted.length === 1 || topShare > 0.7) {
+    // Один доминирующий регион — показываем его полный агрегат
+    label = sorted[0][0];
+    agg = regionAggregates[label] || { houses: 0, people: 0 };
+  } else if (sorted.length <= 3) {
+    // Несколько регионов — суммируем их агрегаты
+    label = sorted.map(e => e[0]).join(' / ');
+    agg = sorted.reduce((acc, [r]) => {
+      const a = regionAggregates[r] || { houses: 0, people: 0 };
+      return { houses: acc.houses + a.houses, people: acc.people + a.people };
+    }, { houses: 0, people: 0 });
+  } else {
+    label = 'Несколько регионов';
+    agg = totalAggregate;
+  }
+
+  document.getElementById('st-region').textContent = label;
+  document.getElementById('st-total').textContent = agg.houses.toLocaleString('ru');
+  document.getElementById('st-people').textContent = agg.people.toLocaleString('ru');
+  // Обновляем список районов в сайдбаре под текущий регион
+  updateDistrictPanel(label === 'Несколько регионов' ? null : label);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Перелёт к области
+// ═══════════════════════════════════════════════════════
+const REGION_COORDS = {
+  'Астана':              [51.18,  71.44,  12],
+  'Алматы':             [43.24,  76.89,  12],
+  'Шымкент':            [42.30,  69.60,  12],
+  'Карагандинская обл.':[49.80,  73.10,   8],
+  'Актюбинская обл.':   [50.28,  57.21,   9],
+  'Павлодарская обл.':  [52.28,  76.96,  10],
+  'Костанайская обл.':  [53.22,  63.62,  10],
+  'ВКО':                [49.98,  82.61,  10],
+  'Жамбылская обл.':    [42.90,  71.39,  10],
+  'Кызылординская обл.':[44.85,  65.51,  10],
+  'Атырауская обл.':    [47.11,  51.93,  10],
+  'ЗКО':                [51.23,  51.37,  10],
+  'СКО':                [54.87,  69.16,  10],
+  'Мангистауская обл.': [43.65,  51.18,  10],
+  'Туркестанская обл.': [42.30,  68.27,  10],
+  'Акмолинская обл.':   [53.28,  69.39,   9],
+  'Алматинская обл.':   [45.01,  78.38,   9],
+};
+
+function gotoRegion(sel) {
+  const val = sel.value;
+  if (!val) return;
+  const coords = REGION_COORDS[val];
+  if (coords && map) {
+    map.flyTo([coords[0], coords[1]], coords[2], {animate: true, duration: 1.2});
+  }
+  // Сбрасываем дропдаун обратно в placeholder
+  setTimeout(() => { sel.value = ''; }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Слой административных районов (Overpass API + osmtogeojson)
+// ═══════════════════════════════════════════════════════
+let districtsLayer    = null;
+let districtsVisible  = false;
+let _selectedDistPath = null;   // SVG-путь последнего кликнутого полигона
+let _selectedDistTimer = null;  // таймер снятия пульсации
+
+const DIST_PALETTE = [
+  '#3b82f6','#22c55e','#f59e0b','#ef4444',
+  '#8b5cf6','#06b6d4','#ec4899','#f97316',
+  '#84cc16','#14b8a6','#a855f7','#0ea5e9',
+];
+
+function _distColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = Math.imul(31, h) + name.charCodeAt(i) | 0;
+  return DIST_PALETTE[Math.abs(h) % DIST_PALETTE.length];
+}
+
+// Порог зума: ниже — показываем области (admin_level=4), выше — районы (6/8)
+const DIST_ZOOM_THRESHOLD = 8;
+
+async function toggleDistricts() {
+  const btn = document.getElementById('btn-districts');
+  const leg = document.getElementById('dist-legend');
+  if (districtsVisible) {
+    if (districtsLayer) { map.removeLayer(districtsLayer); districtsLayer = null; }
+    districtsVisible = false;
+    btn.textContent = 'Показать подсветку границ';
+    leg.style.display = 'none';
+    leg.innerHTML = '';
+    return;
+  }
+  btn.textContent = 'Загрузка...';
+  btn.disabled = true;
+  try {
+    await fetchDistricts();
+    districtsVisible = true;
+    btn.textContent = 'Скрыть подсветку границ';
+  } catch(e) {
+    console.error('Districts load error:', e);
+    btn.textContent = 'Показать подсветку границ';
+    alert('Не удалось загрузить данные границ: ' + e.message);
+  }
+  btn.disabled = false;
+}
+
+// Два раздельных кеша: L4 (области) и L68 (районы)
+// Каждый загружается один раз и хранится до перезагрузки страницы
+let _cacheL4  = null;   // districts_l4.geojson  — ~20 областей, мгновенно
+let _cacheL68 = null;   // districts_l68.geojson — ~4700 районов, ~несколько МБ
+
+async function _loadFile(url) {
+  // 'no-cache' — всегда проверяем у сервера (ETag/Last-Modified),
+  // но браузер всё равно использует кеш если ответ 304 Not Modified
+  const r = await fetch(url, {cache: 'no-cache'});
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  return r.json();
+}
+
+async function _getL4() {
+  if (!_cacheL4) {
+    console.log('[districts] loading L4 (oblasts)...');
+    _cacheL4 = await _loadFile('/data/districts_l4.geojson');
+    console.log('[districts] L4 ready:', _cacheL4.features?.length, 'features');
+  }
+  return _cacheL4;
+}
+
+async function _getL68() {
+  if (!_cacheL68) {
+    console.log('[districts] loading L68 (raions)...');
+    _cacheL68 = await _loadFile('/data/districts_l68.geojson');
+    console.log('[districts] L68 ready:', _cacheL68.features?.length, 'features');
+  }
+  return _cacheL68;
+}
+
+async function fetchDistricts() {
+  const zoom       = map.getZoom();
+  const showOblast = zoom < DIST_ZOOM_THRESHOLD;
+
+  // Загружаем нужный файл (маленький L4 или большой L68)
+  const geojson = await (showOblast ? _getL4() : _getL68());
+
+  // Быстрая фильтрация по viewport через pre-computed bbox из properties
+  const b = map.getBounds().pad(0.3);
+  const bW = b.getWest(), bS = b.getSouth(), bE = b.getEast(), bN = b.getNorth();
+
+  const polys = (geojson.features || []).filter(f => {
+    if (!f.geometry) return false;
+    const bb = f.properties?.bbox;  // [W, S, E, N]
+    if (bb) {
+      // O(1) bbox-пересечение
+      if (bb[2] < bW || bb[0] > bE || bb[3] < bS || bb[1] > bN) return false;
+    }
+    return true;
+  });
+
+  if (districtsLayer) { map.removeLayer(districtsLayer); districtsLayer = null; }
+  _selectedDistPath = null;
+  clearTimeout(_selectedDistTimer);
+
+  if (!polys.length) {
+    const leg = document.getElementById('dist-legend');
+    leg.style.display = 'none'; leg.innerHTML = '';
+    return;
+  }
+
+  const legendItems = [];
+
+  districtsLayer = L.geoJSON({type:'FeatureCollection', features: polys}, {
+    style(feature) {
+      const name = feature.properties?.name || '?';
+      const col  = _distColor(name);
+      if (showOblast) {
+        return { color: col, weight: 3, fillColor: col, fillOpacity: 0.07, opacity: 0.9, dashArray: '8 5' };
+      }
+      return { color: col, weight: 1.5, fillColor: col, fillOpacity: 0.15, opacity: 0.8 };
+    },
+    onEachFeature(feature, layer) {
+      const name = feature.properties?.name || '—';
+      const col  = _distColor(name);
+      const label = showOblast
+        ? `<b style="font-size:14px">${name}</b><br><span style="font-size:11px;color:#64748b">Область / регион</span>`
+        : `<b style="font-size:13px">${name}</b>`;
+      layer.bindTooltip(label, { sticky: true, direction: 'top', opacity: 0.92 });
+      layer.on('click', (e) => {
+        // ── Пульсация выбранной границы ──────────────────────────────────
+        if (_selectedDistPath && _selectedDistPath !== layer._path) {
+          _selectedDistPath.classList.remove('district-selected', 'oblast-selected');
+        }
+        const svgPath = layer._path;
+        if (svgPath) {
+          const cls = showOblast ? 'oblast-selected' : 'district-selected';
+          svgPath.classList.remove('district-selected', 'oblast-selected');
+          void svgPath.offsetWidth;
+          svgPath.classList.add(cls);
+          _selectedDistPath = svgPath;
+          clearTimeout(_selectedDistTimer);
+          _selectedDistTimer = setTimeout(() => {
+            svgPath.classList.remove('district-selected', 'oblast-selected');
+            _selectedDistPath = null;
+          }, 8200); // 10 итераций × 0.8s + запас
+        }
+
+        // ── Агрегация статистики по KATO-полям (rainame / regname) ──────
+        // НИКАКОГО bbox для L68 — иначе Целиноградский район (bbox вокруг Астаны)
+        // захватит все астанинские адреса. Только точное совпадение с полем в БД.
+        const bb = feature.properties?.bbox; // [W, S, E, N]
+        const agg = {total:0,male:0,female:0,lsi:0,asp:0,
+                     deti_do18:0,trud_vozrast:0,working:0,
+                     student:0,pensioners:0,ip:0,kandas:0};
+        let placeCount = 0;
+
+        if (showOblast) {
+          // ── Регионы (L4): сопоставляем stats.regname ───────────────────
+          // Маппинг аббревиатур GeoJSON → KATO regname в БД
+          const REGION_MAP = {
+            'СКО':  'Северо-Казахстанская область',
+            'ВКО':  'Восточно-Казахстанская область',
+            'ЗКО':  'Западно-Казахстанская область',
+            'Абай': 'Абайская область',
+          };
+          const katoRegname = REGION_MAP[name] || name;
+          if (allPlaces?.length) {
+            for (const pl of allPlaces) {
+              const rv = pl.stats?.regname || '';
+              // "Карагандинская" includes в "Карагандинская область" и наоборот
+              if (rv !== katoRegname && !rv.includes(katoRegname) && !katoRegname.includes(rv)) continue;
+              const s = pl.stats || {};
+              placeCount++;
+              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
+            }
+          }
+          // Fallback bbox для регионов — только если совсем нет данных
+          if (placeCount === 0 && bb && allPlaces?.length) {
+            const [bW, bS, bE, bN] = bb;
+            for (const pl of allPlaces) {
+              if (pl.lat == null || pl.lon == null) continue;
+              if (pl.lat < bS || pl.lat > bN || pl.lon < bW || pl.lon > bE) continue;
+              const s = pl.stats || {};
+              placeCount++;
+              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
+            }
+          }
+        } else {
+          // ── Районы (L68): ТОЛЬКО stats.rainame, никакого bbox ──────────
+          // Казахские OSM-имена Астаны → русские KATO-значения в БД
+          const RAION_MAP = {
+            'Есіл ауданы':     'район Есиль',
+            'Алматы ауданы':   'район Алматы',
+            'Сарыарқа ауданы': 'район Сарыарка',
+            'Байқоңыр ауданы': 'район Байқоңыр',
+            'Нұра ауданы':     'район Нура',
+          };
+          const katoRainame = RAION_MAP[name] || name;
+          if (allPlaces?.length) {
+            for (const pl of allPlaces) {
+              if ((pl.stats?.rainame || '') !== katoRainame) continue;
+              const s = pl.stats || {};
+              placeCount++;
+              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
+            }
+          }
+        }
+
+        // ── Показываем попап как у обычного маркера ──────────────────────
+        L.popup({ maxWidth: 300, autoPan: true })
+          .setLatLng(e.latlng)
+          .setContent(buildAreaPopup(name, showOblast, agg, placeCount))
+          .openOn(map);
+      });
+      legendItems.push({name, col});
+    },
+  }).addTo(map);
+
+  const leg = document.getElementById('dist-legend');
+  const sorted = [...new Map(legendItems.map(x => [x.name, x])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  leg.innerHTML = sorted.map(({name, col}) =>
+    `<span style="display:inline-flex;align-items:center;margin-right:6px;white-space:nowrap">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col};margin-right:4px;border:1px solid rgba(0,0,0,.15)"></span>
+      ${name}
+    </span>`
+  ).join('');
+  leg.style.display = sorted.length > 0 ? 'block' : 'none';
+}
+
+// Перерисовка границ при смене зума или перемещении карты
+function _onMapMoveForDistricts() {
+  if (!districtsVisible) return;
+  fetchDistricts().catch(e => console.error('[districts] re-render error:', e));
+}
+let _distMoveTimer = null;
+function _scheduleDistrictsRedraw() {
+  if (!districtsVisible) return;
+  clearTimeout(_distMoveTimer);
+  _distMoveTimer = setTimeout(_onMapMoveForDistricts, 300);
+}
+
+function confColor(conf) {
+  return {high:'#22c55e', medium:'#f59e0b', low:'#f97316', miss:'#ef4444'}[conf] || '#94a3b8';
+}
+
+function clusterIcon(cluster) {
+  // Суммируем людей из всех дочерних маркеров (не количество маркеров)
+  const n = cluster.getAllChildMarkers().reduce((sum, m) => sum + (m._total || 0), 0);
+  const col = n > 9999 ? '#2563eb' : n > 999 ? '#0891b2' : n > 99 ? '#059669' : '#22c55e';
+  const sz  = n > 9999 ? 46 : n > 999 ? 38 : 30;
+  const txt = n > 999999 ? Math.round(n/1000000)+'М' : n > 999 ? Math.round(n/1000)+'к' : n;
+  return L.divIcon({
+    html:`<div class="cls" style="width:${sz}px;height:${sz}px;background:${col};font-size:${sz>38?13:11}px">${txt}</div>`,
+    className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2],
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  Загрузка мест — статический файл, один раз при старте
+// ═══════════════════════════════════════════════════════
+let loadingPlaces = false;
+
+async function loadPlaces() {
+  if (!map || loadingPlaces) return;
+  loadingPlaces = true;
+  document.getElementById('st-total').textContent = 'загрузка...';
+  try {
+    // Статический файл отдаётся Caddy напрямую — не нагружает Python/БД
+    const r = await fetch('/data/places.json', {cache: 'no-cache'});
+    if (!r.ok) throw new Error('places.json not found: ' + r.status);
+    allPlaces = await r.json();
+    buildRegionAggregates();
+    renderPlaces();
+    updateViewStats(null);
+  } catch(e) {
+    console.error('loadPlaces:', e);
+    document.getElementById('st-total').textContent = 'ошибка';
+  }
+  loadingPlaces = false;
+}
+
+function renderPlaces() {
+  clusterGroup.clearLayers();
+  const markers = [];
+
+  // Шаг 1: фильтруем места
+  const visible = [];
+  for (const p of allPlaces) {
+    if (p.lat == null) continue;
+    if (!activeConf.has(p.confidence)) continue;
+
+    if (activeCats.size > 0) {
+      const s = p.stats || {};
+      // AND-логика: дом показывается только если ВСЕ выбранные категории присутствуют
+      let match = true;
+      for (const cat of activeCats) {
+        if (!s[cat] || s[cat] <= 0) { match = false; break; }
+      }
+      if (!match) continue;
+    }
+
+    if (activeDistrict !== 'all') {
+      const pRain = (p.stats && p.stats.rainame) ? p.stats.rainame : '';
+      if (pRain !== activeDistrict) continue;
+    }
+
+    visible.push(p);
+  }
+
+  // Счётчики обновляются через updateViewStats() с учётом текущего viewport
+  updateViewStats(visible);
+
+  // Шаг 2: группируем по точной координате — несколько адресов на одной точке
+  // объединяются в один маркер с суммарным количеством людей.
+  const coordMap = new Map(); // "lat,lon" → { places: [], total, bestConf }
+  const CONF_ORDER = {high: 0, medium: 1, low: 2, miss: 3};
+
+  for (const p of visible) {
+    const key = `${p.lat},${p.lon}`;
+    if (!coordMap.has(key)) {
+      coordMap.set(key, { places: [], total: 0, bestConf: p.confidence });
+    }
+    const bucket = coordMap.get(key);
+    bucket.places.push(p);
+    bucket.total += (p.stats ? p.stats.total : 0);
+    // Выбираем наилучшую уверенность из всех адресов на точке
+    if ((CONF_ORDER[p.confidence] ?? 99) < (CONF_ORDER[bucket.bestConf] ?? 99)) {
+      bucket.bestConf = p.confidence;
+    }
+  }
+
+  // Шаг 3: создаём маркеры (один на координату)
+  for (const [key, bucket] of coordMap) {
+    const p0 = bucket.places[0];
+    const total = bucket.total;
+    const col   = confColor(bucket.bestConf);
+    const sz    = total > 100 ? 32 : total > 20 ? 26 : 22;
+    const m = L.marker([p0.lat, p0.lon], {
+      icon: L.divIcon({
+        html:`<div class="bld" style="width:${sz}px;height:${sz}px;background:${col};font-size:${sz>26?11:10}px">${total}</div>`,
+        className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2],
+      }),
+    });
+
+    // Привязываем popup сразу — Leaflet сам откроет его при клике.
+    // popupopen срабатывает каждый раз при открытии, данные грузим один раз и кэшируем.
+    m.bindPopup('<div class="geo-popup"><p>Загрузка...</p></div>', {maxWidth: 300});
+
+    let cachedPopupData = null;
+
+    m.on('popupopen', async () => {
+      if (cachedPopupData) {
+        m.setPopupContent(buildPopup(cachedPopupData));
+        m.getPopup()?.update();
+        return;
+      }
+
+      if (bucket.places.length === 1) {
+        try {
+          const rr = await fetch(`${API}/api/places/${p0.id}`, {credentials: 'include'});
+          if (rr.ok) {
+            const full = await rr.json();
+            cachedPopupData = full;
+            const idx = allPlaces.findIndex(x => x.id === p0.id);
+            if (idx !== -1) allPlaces[idx] = {...allPlaces[idx], ...full};
+            m.setPopupContent(buildPopup(full));
+            m.getPopup()?.update();
+          }
+        } catch {}
+      } else {
+        // Несколько адресов на одной точке — грузим все и суммируем
+        try {
+          const results = await Promise.all(
+            bucket.places.map(p =>
+              fetch(`${API}/api/places/${p.id}`, {credentials: 'include'}).then(r => r.ok ? r.json() : null)
+            )
+          );
+          const valid = results.filter(Boolean);
+          if (valid.length) {
+            const merged = {...valid[0]};
+            const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
+            merged.stats = {};
+            for (const k of keys) merged.stats[k] = valid.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
+            merged._addresses = valid.map(p => `${p.street_name}${p.house ? ', ' + p.house : ''}`);
+            // Для нескольких адресов берём регион/район из первого
+            merged.regname = valid[0].regname || null;
+            merged.rainame = valid[0].rainame || null;
+            cachedPopupData = merged;
+            m.setPopupContent(buildPopup(merged));
+            m.getPopup()?.update();
+          }
+        } catch {}
+      }
+    });
+
+    m._placeData = p0;
+    m._total = total;  // сумма людей в этой точке (может быть несколько адресов)
+    markers.push(m);
+  }
+
+  clusterGroup.addLayers(markers);
+}
+
+// ─── Попап для района / области ──────────────────────────────────────────────
+function buildAreaPopup(name, isOblast, stats, placeCount) {
+  const s = stats || {};
+  const areaLabel = isOblast ? 'Область / регион' : 'Район';
+  return `<div class="geo-popup">
+    <h4 style="font-size:14px">${name}</h4>
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">${areaLabel} &nbsp;·&nbsp; ${placeCount} адресов</div>
+    <table>
+      <tr><td>Всего жителей</td><td>${s.total||0}</td></tr>
+      <tr><td>Мужчин / Женщин</td><td>${(s.male||0)} / ${(s.female||0)}</td></tr>
+      <tr><td>ЛСИ</td><td>${s.lsi||0}</td></tr>
+      <tr><td>АСП</td><td>${s.asp||0}</td></tr>
+      <tr><td>Дети до 18</td><td>${s.deti_do18||0}</td></tr>
+      <tr><td>Труд. возраст</td><td>${s.trud_vozrast||0}</td></tr>
+      <tr><td>Работающие</td><td>${s.working||0}</td></tr>
+      <tr><td>Студенты</td><td>${s.student||0}</td></tr>
+      <tr><td>Пенсионеры</td><td>${s.pensioners||0}</td></tr>
+      <tr><td>ИП</td><td>${s.ip||0}</td></tr>
+      <tr><td>КАНДАС</td><td>${s.kandas||0}</td></tr>
+    </table>
+  </div>`;
+}
+
+function buildPopup(p) {
+  const s = p.stats || {};
+  const canEdit = currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin');
+  const confLabels = {high:'Точный адрес',medium:'Найдена улица',low:'Нечеткое',miss:'Не найдено'};
+  const confColors = {high:'#166534',medium:'#854d0e',low:'#9a3412',miss:'#991b1b'};
+
+  // Несколько адресов на одной точке
+  const addrLine = p._addresses
+    ? p._addresses.join('<br>')
+    : `${p.street_name}${p.house ? ', ' + p.house : ''}`;
+
+  const regionLine = [p.regname, p.rainame].filter(Boolean).join(' / ');
+
+  return `<div class="geo-popup">
+    <h4>${addrLine}</h4>
+    ${regionLine ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">${regionLine}</div>` : ''}
+    ${!p._addresses ? `<div class="conf-line" style="color:${confColors[p.confidence]||'#64748b'}">${confLabels[p.confidence]||p.confidence}</div>` : ''}
+    <table>
+      <tr><td>Всего жителей</td><td>${s.total||0}</td></tr>
+      <tr><td>Мужчин / Женщин</td><td>${s.male||0} / ${s.female||0}</td></tr>
+      <tr><td>ЛСИ</td><td>${s.lsi||0}</td></tr>
+      <tr><td>АСП</td><td>${s.asp||0}</td></tr>
+      <tr><td>Дети до 18</td><td>${s.deti_do18||0}</td></tr>
+      <tr><td>Труд. возраст</td><td>${s.trud_vozrast||0}</td></tr>
+      <tr><td>Работающие</td><td>${s.working||0}</td></tr>
+      <tr><td>Студенты</td><td>${s.student||0}</td></tr>
+      <tr><td>Пенсионеры</td><td>${s.pensioners||0}</td></tr>
+      <tr><td>ИП</td><td>${s.ip||0}</td></tr>
+      <tr><td>КАНДАС</td><td>${s.kandas||0}</td></tr>
+    </table>
+    ${p.lat ? `<div class="coords">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>` : ''}
+    ${canEdit && !p._addresses ? `<button class="edit-btn" onclick="openCoordFromMap(${p.id})">Изменить координату</button>` : ''}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Переключение секций сайдбара
+// ═══════════════════════════════════════════════════════
+function toggleSection(id) {
+  const body = document.getElementById(id + '-body');
+  const arr  = document.getElementById(id + '-arr');
+  if (!body) return;
+  body.classList.toggle('hidden');
+  if (arr) arr.innerHTML = body.classList.contains('hidden') ? '&#9650;' : '&#9660;';
+}
+
+// ═══════════════════════════════════════════════════════
+//  Фильтры уверенности
+// ═══════════════════════════════════════════════════════
+function toggleConf(conf) {
+  const el = document.querySelector(`.conf-item[data-conf="${conf}"]`);
+  if (activeConf.has(conf)) { activeConf.delete(conf); el.classList.add('off'); }
+  else { activeConf.add(conf); el.classList.remove('off'); }
+  renderPlaces();
+}
+function resetConf() {
+  ['high','medium','low','miss'].forEach(c => {
+    activeConf.add(c);
+    document.querySelector(`.conf-item[data-conf="${c}"]`).classList.remove('off');
+  });
+  renderPlaces();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Фильтры категорий
+// ═══════════════════════════════════════════════════════
+document.addEventListener('change', e => {
+  if (e.target.closest('#cats-body') && e.target.type === 'checkbox') {
+    activeCats.clear();
+    document.querySelectorAll('#cats-body input:checked').forEach(cb => activeCats.add(cb.value));
+    renderPlaces();
+  }
+});
+function clearCats() {
+  document.querySelectorAll('#cats-body input').forEach(cb => cb.checked = false);
+  activeCats.clear();
+  renderPlaces();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Фильтр районов
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  Скрыть / показать все точки на карте
+// ═══════════════════════════════════════════════════════
+function toggleHideMarkers(hide) {
+  if (!clusterGroup || !map) return;
+  if (hide) {
+    if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+  } else {
+    if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+  }
+}
+
+function applyDistrict() {
+  const sel = document.querySelector('input[name="dist"]:checked');
+  activeDistrict = sel ? sel.value : 'all';
+  renderPlaces();
+}
+function clearDists() {
+  document.querySelector('input[name="dist"][value="all"]').checked = true;
+  activeDistrict = 'all';
+  renderPlaces();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Инструмент выделения области
+// ═══════════════════════════════════════════════════════
+function initDraw() {
+  const drawn = new L.FeatureGroup();
+  map.addLayer(drawn);
+  map.on(L.Draw.Event.CREATED, e => {
+    if (drawLayer) map.removeLayer(drawLayer);
+    drawLayer = e.layer;
+    map.addLayer(drawLayer);
+    document.getElementById('draw-clear-btn').style.display = 'block';
+    showAreaStats(drawLayer);
+  });
+}
+
+function startDraw(type) {
+  const opts = {shapeOptions:{color:'#3b82f6', weight:2, fillOpacity:.08}};
+  if (type === 'rect')    new L.Draw.Rectangle(map, opts).enable();
+  else if (type === 'circle')  new L.Draw.Circle(map, opts).enable();
+  else if (type === 'polygon') new L.Draw.Polygon(map, opts).enable();
+}
+
+function clearDraw() {
+  if (drawLayer) { map.removeLayer(drawLayer); drawLayer = null; }
+  document.getElementById('draw-clear-btn').style.display = 'none';
+  closeSel();
+}
+
+function _pointInLayer(lat, lon, layer) {
+  const ll = L.latLng(lat, lon);
+  // Круг — проверяем по расстоянию
+  if (layer instanceof L.Circle) {
+    return layer.getLatLng().distanceTo(ll) <= layer.getRadius();
+  }
+  // Прямоугольник и полигон — проверяем bounds (быстро), затем точное попадание
+  if (layer.getBounds && !layer.getBounds().contains(ll)) return false;
+  if (layer instanceof L.Polygon) {
+    // точный ray-casting для полигона
+    const pts = layer.getLatLngs()[0];
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].lng, yi = pts[i].lat;
+      const xj = pts[j].lng, yj = pts[j].lat;
+      if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+  return true; // прямоугольник — уже проверили bounds
+}
+
+function showAreaStats(layer) {
+  const inside = allPlaces.filter(p => {
+    if (!p.lat || !p.lon) return false;
+    return _pointInLayer(p.lat, p.lon, layer);
+  });
+  if (!inside.length) return;
+
+  const sum = k => inside.reduce((a, p) => a + (p.stats ? p.stats[k]||0 : 0), 0);
+  const rows = [
+    ['Домов в области', inside.length],
+    ['Всего жителей',   sum('total')],
+    ['Мужчин',          sum('male')],
+    ['Женщин',          sum('female')],
+    ['ЛСИ',             sum('lsi')],
+    ['АСП',             sum('asp')],
+    ['Дети до 18',      sum('deti_do18')],
+    ['Работающие',      sum('working')],
+    ['Пенсионеры',      sum('pensioners')],
+    ['Студенты',        sum('student')],
+    ['ИП',              sum('ip')],
+    ['КАНДАС',          sum('kandas')],
+  ];
+  document.getElementById('sel-table').innerHTML =
+    rows.map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  document.getElementById('sel-panel').style.display = 'block';
+}
+
+function closeSel() {
+  document.getElementById('sel-panel').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════
+//  Список адресов
+// ═══════════════════════════════════════════════════════
+let listRegions = [];  // [{city, rainames:[...]}]
+
+function openListModal() {
+  listOffset = 0;
+  document.getElementById('list-modal').classList.add('open');
+  loadListRegions();
+  listLoad();
+}
+
+async function loadListRegions() {
+  try {
+    const r = await fetch(`${API}/api/places/regions?kind=house`, {credentials: 'include'});
+    if (!r.ok) return;
+    listRegions = await r.json();
+    const cityEl = document.getElementById('list-city');
+    const saved = cityEl.value;
+    // Очищаем и перезаполняем дропдаун областей
+    cityEl.innerHTML = '<option value="">Все области</option>';
+    for (const reg of listRegions) {
+      const opt = document.createElement('option');
+      opt.value = reg.regname;
+      opt.textContent = reg.regname;
+      cityEl.appendChild(opt);
+    }
+    if (saved) cityEl.value = saved;
+    rebuildRainameDropdown(cityEl.value);
+  } catch {}
+}
+
+function onListCityChange() {
+  listOffset = 0;
+  // При смене области сбрасываем район
+  document.getElementById('list-rainame').value = '';
+  rebuildRainameDropdown(document.getElementById('list-city').value);
+  listLoad();
+}
+
+function rebuildRainameDropdown(city) {
+  const el = document.getElementById('list-rainame');
+  el.innerHTML = '<option value="">Все районы</option>';
+  if (!city) return;
+  const reg = listRegions.find(r => r.regname === city);
+  if (!reg) return;
+  for (const rn of reg.rainames) {
+    const opt = document.createElement('option');
+    opt.value = rn;
+    opt.textContent = rn;
+    el.appendChild(opt);
+  }
+}
+function closeListModal() {
+  document.getElementById('list-modal').classList.remove('open');
+  document.getElementById('list-city').value    = '';
+  document.getElementById('list-rainame').value = '';
+  rebuildRainameDropdown('');
+}
+function debounceList() {
+  clearTimeout(listTimer);
+  listTimer = setTimeout(() => { listOffset = 0; listLoad(); }, 400);
+}
+async function listLoad() {
+  const search  = document.getElementById('list-search').value.trim();
+  const conf    = document.getElementById('list-conf').value;
+  const city    = document.getElementById('list-city').value;
+  const rainame = document.getElementById('list-rainame').value;
+  const params  = new URLSearchParams({kind:'house', offset:listOffset, limit:LIST_LIMIT});
+  if (conf)    params.set('confidence', conf);
+  if (search)  params.set('search', search);
+  if (city)    params.set('city', city);
+  if (rainame) params.set('rainame', rainame);
+
+  const r = await fetch(`${API}/api/places/list?${params}`, {credentials:'include'});
+  if (!r.ok) return;
+  const data = await r.json();
+
+  const canEdit = currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin');
+  const tbody = document.getElementById('list-tbody');
+  tbody.innerHTML = data.items.map(p => {
+    const addr   = `${p.street_name}${p.house ? ', ' + p.house : ''}`;
+    const coords = p.lat != null ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}` : '—';
+    return `<tr>
+      <td>${addr}</td>
+      <td style="font-size:12px;color:#374151">${p.regname || '—'}</td>
+      <td style="font-size:12px;color:#374151">${p.rainame || '—'}</td>
+      <td style="color:#94a3b8;font-size:12px">${coords}</td>
+      <td><span class="conf-badge ${p.confidence}">${p.confidence}</span></td>
+      <td>${p.person_count}</td>
+      <td style="white-space:nowrap">
+        ${canEdit ? `<button class="list-action" onclick="openCoordModal(${p.id},'${addr.replace(/'/g,'')}')">Изменить</button> ` : ''}
+        ${p.lat != null ? `<button class="list-action" onclick="flyTo(${p.lat},${p.lon},${p.id})">На карте</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const from = listOffset + 1, to = Math.min(listOffset + LIST_LIMIT, data.total);
+  document.getElementById('list-info').textContent = `${from}–${to} из ${data.total}`;
+}
+function listPrev() { if (listOffset >= LIST_LIMIT) { listOffset -= LIST_LIMIT; listLoad(); } }
+function listNext() { listOffset += LIST_LIMIT; listLoad(); }
+function flyTo(lat, lon, id) {
+  closeListModal();
+  map.flyTo([lat, lon], 17, {animate:true, duration:1});
+
+  // После завершения анимации — найти маркер и открыть его попап
+  map.once('moveend', () => {
+    const target = clusterGroup.getLayers().find(m => m._placeData && m._placeData.id === id);
+    if (!target) return;
+    // zoomToShowLayer убирает кластер если нужно, затем вызывает колбэк
+    clusterGroup.zoomToShowLayer(target, () => target.openPopup());
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  Редактирование координат
+// ═══════════════════════════════════════════════════════
+function openCoordModal(id, title) {
+  editingId = id;
+  document.getElementById('coord-title').textContent = 'Координаты: ' + title;
+  document.getElementById('coord-lat').value = '';
+  document.getElementById('coord-lon').value = '';
+  document.getElementById('coord-reason').value = '';
+  document.getElementById('coord-modal').classList.add('open');
+}
+function openCoordFromMap(id) {
+  const p = allPlaces.find(x => x.id === id);
+  if (!p) return;
+  const addr = `${p.street_name}${p.house ? ', ' + p.house : ''}`;
+  openCoordModal(id, addr);
+  if (p.lat) {
+    document.getElementById('coord-lat').value = p.lat.toFixed(6);
+    document.getElementById('coord-lon').value = p.lon.toFixed(6);
+  }
+}
+function closeCoordModal() {
+  document.getElementById('coord-modal').classList.remove('open');
+  stopMapPick();
+  editingId = null;
+}
+function startMapPick() {
+  document.getElementById('coord-modal').classList.remove('open');
+  document.getElementById('map-pick-hint').style.display = 'block';
+  pickingCoord = true;
+  map.getContainer().style.cursor = 'crosshair';
+  map.once('click', onMapPick);
+}
+function onMapPick(e) {
+  document.getElementById('coord-lat').value = e.latlng.lat.toFixed(6);
+  document.getElementById('coord-lon').value = e.latlng.lng.toFixed(6);
+  stopMapPick();
+  document.getElementById('coord-modal').classList.add('open');
+}
+function stopMapPick() {
+  pickingCoord = false;
+  document.getElementById('map-pick-hint').style.display = 'none';
+  map.getContainer().style.cursor = '';
+  map.off('click', onMapPick);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickingCoord) stopMapPick(); });
+
+async function saveCoords() {
+  if (!editingId) return;
+  const lat    = parseFloat(document.getElementById('coord-lat').value);
+  const lon    = parseFloat(document.getElementById('coord-lon').value);
+  const reason = document.getElementById('coord-reason').value.trim();
+  if (isNaN(lat) || isNaN(lon)) { alert('Введите корректные координаты'); return; }
+  const r = await fetch(`${API}/api/places/${editingId}/coords`, {
+    method:'PATCH', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({lat, lon, reason: reason||null}),
+  });
+  if (!r.ok) { alert('Ошибка: ' + await r.text()); return; }
+  const updated = await r.json();
+  const savedId = editingId;  // сохраняем до closeCoordModal, который обнуляет editingId
+  closeCoordModal();
+
+  // Обновляем только координаты и confidence — остальные поля (stats, rainame и др.) сохраняем
+  const idx = allPlaces.findIndex(x => x.id === savedId);
+  if (idx !== -1) {
+    allPlaces[idx].lat        = updated.lat;
+    allPlaces[idx].lon        = updated.lon;
+    allPlaces[idx].confidence = updated.confidence;
+    allPlaces[idx].source     = updated.source;
+    renderPlaces();
+    // Центрируем карту на новой точке
+    map.setView([updated.lat, updated.lon], Math.max(map.getZoom(), 16), {animate: true});
+  } else {
+    loadPlaces();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Импорт xlsx
+// ═══════════════════════════════════════════════════════
+function openImportModal() {
+  document.getElementById('import-modal').classList.add('open');
+  document.getElementById('import-status').textContent = '';
+}
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+}
+async function doImport() {
+  const fi  = document.getElementById('import-file');
+  const kind = document.getElementById('import-kind').value;
+  const st  = document.getElementById('import-status');
+  if (!fi.files.length) { st.textContent = 'Выберите файл'; return; }
+  const fd = new FormData();
+  fd.append('file', fi.files[0]);
+  fd.append('kind', kind);
+  st.textContent = 'Загружаю...';
+  try {
+    const r = await fetch(`${API}/api/imports`, {method:'POST', credentials:'include', body:fd});
+    const d = await r.json();
+    if (!r.ok) { st.textContent = 'Ошибка: ' + JSON.stringify(d); return; }
+    st.textContent = `Задача создана (id=${d.snapshot_id}). Обработка идёт в фоне.`;
+    pollImport(d.snapshot_id, st);
+  } catch(e) { st.textContent = 'Ошибка: ' + e.message; }
+}
+async function pollImport(id, st) {
+  while (true) {
+    await new Promise(r => setTimeout(r, 3000));
+    const r = await fetch(`${API}/api/imports/${id}`, {credentials:'include'});
+    if (!r.ok) break;
+    const s = await r.json();
+    const pct = s.total ? Math.round(s.progress/s.total*100) : 0;
+    st.textContent = `${s.status} — ${s.progress}/${s.total} (${pct}%)`;
+    if (s.status === 'done' || s.status === 'error') { loadPlaces(); break; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Запуск
+// ═══════════════════════════════════════════════════════
+checkAuth();
+
+// ═══════════════════════════════════════════════════════
+//  Управление пользователями (admin)
+// ═══════════════════════════════════════════════════════
+async function openUsersModal() {
+  document.getElementById('users-modal').classList.add('open');
+  document.getElementById('nu-status').textContent = '';
+  await refreshUsersList();
+}
+
+function closeUsersModal() {
+  document.getElementById('users-modal').classList.remove('open');
+}
+
+async function refreshUsersList() {
+  const el = document.getElementById('users-list');
+  el.textContent = 'Загрузка...';
+  try {
+    const r = await fetch(`${API}/api/users`, {credentials: 'include'});
+    if (!r.ok) { el.textContent = 'Ошибка загрузки'; return; }
+    const users = await r.json();
+    if (!users.length) { el.innerHTML = '<span style="color:#94a3b8">Нет пользователей</span>'; return; }
+
+    const roleColor = {admin: '#dc2626', editor: '#d97706', viewer: '#2563eb'};
+    const roleBg    = {admin: '#fef2f2', editor: '#fffbeb', viewer: '#eff6ff'};
+    el.innerHTML = users.map(u => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
+        <div>
+          <span style="font-weight:600">${u.login}</span>
+          <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${u.role}</span>
+          ${!u.is_active ? '<span style="margin-left:6px;font-size:11px;color:#94a3b8">(неактивен)</span>' : ''}
+        </div>
+        <div style="display:flex;gap:6px">
+          ${u.login !== currentUser.login ? `
+            <button onclick="toggleUserActive(${u.id}, ${u.is_active})"
+              style="font-size:11px;padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;cursor:pointer;color:#374151">
+              ${u.is_active ? 'Деактив.' : 'Активир.'}
+            </button>
+            <button onclick="deleteUser(${u.id}, '${u.login}')"
+              style="font-size:11px;padding:3px 8px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#dc2626">
+              Удалить
+            </button>
+          ` : '<span style="font-size:11px;color:#94a3b8">это вы</span>'}
+        </div>
+      </div>
+    `).join('');
+  } catch { el.textContent = 'Ошибка'; }
+}
+
+async function createUser() {
+  const login = document.getElementById('nu-login').value.trim();
+  const pass  = document.getElementById('nu-pass').value;
+  const role  = document.getElementById('nu-role').value;
+  const st    = document.getElementById('nu-status');
+
+  if (!login || !pass) { st.style.color = '#dc2626'; st.textContent = 'Заполните логин и пароль'; return; }
+
+  st.style.color = '#64748b'; st.textContent = 'Создание...';
+  try {
+    const r = await fetch(`${API}/api/users`, {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({login, password: pass, role}),
+    });
+    if (r.ok) {
+      st.style.color = '#166534'; st.textContent = `Пользователь "${login}" создан`;
+      document.getElementById('nu-login').value = '';
+      document.getElementById('nu-pass').value = '';
+      await refreshUsersList();
+    } else {
+      const err = await r.json();
+      st.style.color = '#dc2626'; st.textContent = err.detail || 'Ошибка';
+    }
+  } catch { st.style.color = '#dc2626'; st.textContent = 'Ошибка сети'; }
+}
+
+async function deleteUser(id, login) {
+  if (!confirm(`Удалить пользователя "${login}"?`)) return;
+  try {
+    const r = await fetch(`${API}/api/users/${id}`, {method: 'DELETE', credentials: 'include'});
+    if (r.ok) await refreshUsersList();
+    else alert('Ошибка удаления');
+  } catch { alert('Ошибка сети'); }
+}
+
+async function toggleUserActive(id, isActive) {
+  try {
+    const r = await fetch(`${API}/api/users/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({is_active: !isActive}),
+    });
+    if (r.ok) await refreshUsersList();
+    else alert('Ошибка');
+  } catch { alert('Ошибка сети'); }
+}
+</script>
+</body>
+</html>

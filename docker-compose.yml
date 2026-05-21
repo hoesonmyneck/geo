@@ -1,0 +1,153 @@
+services:
+
+  # -----------------------------------------------------------------
+  # PostgreSQL 16 + PostGIS 3 — основная БД системы
+  # -----------------------------------------------------------------
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: geo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-geo}
+      POSTGRES_USER:     ${POSTGRES_USER:-geo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geo} -d ${POSTGRES_DB:-geo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geo-net
+
+  # -----------------------------------------------------------------
+  # FastAPI backend
+  # -----------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: geo_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - geo-net
+    volumes:
+      - ./data/street_aliases.csv:/app/data/street_aliases.csv:ro
+      - geo_cache:/app/data/cache
+      - geo_static:/geo-data
+      - geo_input:/app/data/input
+
+  # -----------------------------------------------------------------
+  # Worker — геокодирующий pipeline (запускается вручную или через API)
+  # Тот же образ что backend, но другой entrypoint
+  # -----------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: geo_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      NOMINATIM_URL:  http://nominatim:8080
+      PHOTON_URL:     http://photon:2322
+    entrypoint: ["python", "-m", "worker.run", "--daemon"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - geo-net
+    volumes:
+      - ./data/street_aliases.csv:/app/data/street_aliases.csv:ro
+      - geo_cache:/app/data/cache
+      - geo_input:/app/data/input
+      - geo_static:/geo-data
+
+  # -----------------------------------------------------------------
+  # Caddy — reverse proxy + автоматический HTTPS
+  # -----------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: geo_caddy
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+      - "443:443"
+    volumes:
+      - ./frontend:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - geo_static:/geo-data:ro
+    depends_on:
+      - backend
+    networks:
+      - geo-net
+
+  # -----------------------------------------------------------------
+  # Nominatim 4.4 — structured geocoding
+  # -----------------------------------------------------------------
+  nominatim:
+    image: mediagis/nominatim:4.4
+    container_name: nominatim
+    restart: "no"
+    ports:
+      - "8080:8080"
+    environment:
+      PBF_PATH:                /nominatim/pbf/kazakhstan-latest.osm.pbf
+      IMPORT_STYLE:            full
+      THREADS:                 8
+      SKIP_IMPORT_IF_DB_EXISTS: "true"
+    volumes:
+      - ./data/pbf:/nominatim/pbf
+      - nominatim-data:/var/lib/postgresql/14/main
+    shm_size: "4gb"
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: "16g"
+    networks:
+      - geo-net
+
+  # -----------------------------------------------------------------
+  # Photon — fuzzy/multilingual geocoder
+  # -----------------------------------------------------------------
+  photon:
+    build:
+      context: .
+      dockerfile: Dockerfile.photon
+    image: photon-local:1.1.0
+    container_name: photon
+    restart: "no"
+    ports:
+      - "2322:2322"
+    volumes:
+      - photon-data:/photon/photon_data
+    command: ["-listen-ip", "0.0.0.0"]
+    networks:
+      - geo-net
+
+volumes:
+  pgdata:
+  nominatim-data:
+  photon-data:
+  geo_cache:
+  caddy_data:
+  caddy_config:
+  geo_static:
+  geo_input:
+
+networks:
+  geo-net:
+    driver: bridge

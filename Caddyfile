@@ -1,0 +1,32 @@
+{
+    # Отключить автоматический HTTPS (для локальной разработки)
+    auto_https off
+}
+
+:80 {
+    encode gzip
+
+    # API проксируется на backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Статические данные из /geo-data.
+    # file_server с precompressed gzip: если браузер принимает gzip и есть .gz файл,
+    # Caddy отдаёт его напрямую без runtime сжатия.
+    handle /data/* {
+        uri strip_prefix /data
+        root * /geo-data
+        header * Cache-Control "no-cache, must-revalidate"
+        file_server {
+            precompressed gzip
+        }
+    }
+
+    # Статика фронтенда
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
