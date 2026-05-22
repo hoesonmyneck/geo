@@ -13,11 +13,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # PostgreSQL позволяет добавлять значения в enum без пересоздания
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'admin_kandas'")
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'viewer_kandas'")
+    # Роль хранится как VARCHAR(16) — новые значения admin_kandas/viewer_kandas
+    # допустимы сразу, дополнительных изменений схемы БД не требуется.
+    pass
 
 
 def downgrade() -> None:
-    # Удаление значений из enum в PostgreSQL не поддерживается без пересоздания типа
     pass
