@@ -167,6 +167,36 @@ class ImportSnapshot(Base):
     persons: Mapped[list["Person"]] = relationship(back_populates="snapshot")
 
 
+# ─── Кандасы (отдельный реестр, координаты выставляются вручную) ─────────────
+
+class Kandas(Base):
+    __tablename__ = "kandas"
+
+    id:           Mapped[int]        = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fio:          Mapped[str]        = mapped_column(String(256), nullable=False)
+    iin:          Mapped[str | None] = mapped_column(String(32),  nullable=True,  index=True)
+    dob:          Mapped[str | None] = mapped_column(String(32),  nullable=True)
+    age:          Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    citizenship:  Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    gender:       Mapped[str | None] = mapped_column(String(16),  nullable=True)
+    # Адрес регистрации
+    oblast:  Mapped[str | None] = mapped_column(String(128), nullable=True)
+    raion:   Mapped[str | None] = mapped_column(String(128), nullable=True)
+    city:    Mapped[str | None] = mapped_column(String(128), nullable=True)
+    street:  Mapped[str | None] = mapped_column(String(256), nullable=True)
+    house:   Mapped[str | None] = mapped_column(String(32),  nullable=True)
+    apt:     Mapped[str | None] = mapped_column(String(32),  nullable=True)
+    phone:   Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    # Доп. данные (работа, учёба, льготы — всё в JSONB)
+    extra:   Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Координаты
+    lat:          Mapped[float | None] = mapped_column(Float,    nullable=True)
+    lon:          Mapped[float | None] = mapped_column(Float,    nullable=True)
+    coord_source: Mapped[str | None]   = mapped_column(String(16), nullable=True, default="none")
+    edited_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at:   Mapped[datetime]        = mapped_column(DateTime, server_default=func.now())
+
+
 # ─── Журнал правок координат ─────────────────────────────────────────────────
 
 class EditLog(Base):

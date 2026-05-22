@@ -326,10 +326,15 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
+    <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Кандасы</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <label class="cat-item" style="margin-top:6px">
       <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
       Скрыть точки
+    </label>
+    <label class="cat-item" style="margin-top:4px">
+      <input type="checkbox" id="chk-kandas-lens" onchange="toggleKandasLens(this.checked)">
+      <span style="color:#7c3aed;font-weight:600">Линза кандасов</span>
     </label>
     <div id="dist-legend" style="display:none;margin-top:6px;font-size:11px;line-height:1.9"></div>
     <div style="margin-top:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px">Выбрать область</div>
@@ -559,6 +564,17 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 
     <div class="btn-row" style="margin-top:16px">
       <button class="btn-secondary" onclick="closeUsersModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: Кандасы ── -->
+<div class="modal-overlay" id="kandas-modal">
+  <div class="coord-box" style="width:720px;max-width:96vw;max-height:85vh;overflow-y:auto">
+    <h3 style="color:#7c3aed">Реестр кандасов</h3>
+    <div id="kandas-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div style="margin-top:16px;text-align:right">
+      <button class="action-btn" onclick="closeKandasModal()">Закрыть</button>
     </div>
   </div>
 </div>
@@ -1440,6 +1456,242 @@ function toggleHideMarkers(hide) {
   } else {
     if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
   }
+}
+
+// ═══════════════════════════════════════════════════════
+//  КАНДАСЫ — реестр, линза, карточки
+// ═══════════════════════════════════════════════════════
+let kandasLayer = null;   // слой с маркерами кандасов
+let kandasData  = [];     // кэш списка
+
+// Фиолетовая иконка для кандасов
+const kandasIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    width:28px;height:28px;border-radius:50%;
+    background:#7c3aed;border:3px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:12px;font-weight:700">К</div>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -16],
+});
+
+async function loadKandasLayer() {
+  const token = localStorage.getItem('geo_token');
+  const res = await fetch('/api/kandas', {
+    headers: token ? { Authorization: 'Bearer ' + token } : {}
+  });
+  if (!res.ok) return;
+  kandasData = await res.json();
+
+  if (kandasLayer) { map.removeLayer(kandasLayer); kandasLayer = null; }
+  kandasLayer = L.layerGroup();
+
+  for (const k of kandasData) {
+    if (k.lat == null || k.lon == null) continue;
+    const marker = L.marker([k.lat, k.lon], { icon: kandasIcon });
+    marker.bindPopup(buildKandasPopup(k), { maxWidth: 320 });
+    marker._kandasData = k;
+    kandasLayer.addLayer(marker);
+  }
+  map.addLayer(kandasLayer);
+}
+
+function buildKandasPopup(k) {
+  const addr = [k.street, k.house, k.apt ? `кв.${k.apt}` : ''].filter(Boolean).join(', ');
+  const loc  = [k.oblast, k.raion, k.city].filter(Boolean).join(', ');
+  let extra = '';
+  if (k.extra) {
+    const rows = Object.entries(k.extra).map(([key, val]) => {
+      const label = {
+        nationality:'Национальность', note:'Примечание',
+        work_org:'Место работы', work_address:'Адрес работы',
+        work_type:'Вид работы', position:'Должность',
+        staff_pos:'Штатная должность', education:'Образование',
+        status:'Статус', benefits:'Льготы', bin_work:'БИН работодателя',
+      }[key] || key;
+      return `<tr><td style="color:#64748b;padding-right:8px;white-space:nowrap">${label}</td><td>${val}</td></tr>`;
+    }).join('');
+    if (rows) extra = `<table style="font-size:11px;margin-top:6px;border-collapse:collapse">${rows}</table>`;
+  }
+  return `
+    <div style="font-size:13px">
+      <div style="font-weight:700;color:#7c3aed;margin-bottom:4px">${k.fio}</div>
+      ${k.iin ? `<div style="font-size:11px;color:#64748b">ИИН: ${k.iin}</div>` : ''}
+      <div style="font-size:11px;color:#64748b">
+        ${k.dob || ''} ${k.age ? `(${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}
+      </div>
+      ${loc  ? `<div style="margin-top:4px;font-size:12px">📍 ${loc}</div>` : ''}
+      ${addr ? `<div style="font-size:12px">🏠 ${addr}</div>` : ''}
+      ${k.phone ? `<div style="font-size:12px">📞 ${k.phone}</div>` : ''}
+      ${extra}
+    </div>`;
+}
+
+function toggleKandasLens(on) {
+  if (on) {
+    // Скрыть обычные точки, показать кандасов
+    if (clusterGroup && map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+    document.getElementById('chk-hide-markers').checked = true;
+    loadKandasLayer();
+  } else {
+    // Вернуть обычные точки, убрать слой кандасов
+    document.getElementById('chk-hide-markers').checked = false;
+    if (clusterGroup && !map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+    if (kandasLayer) { map.removeLayer(kandasLayer); kandasLayer = null; }
+  }
+}
+
+// ── Модальное окно Кандасы ────────────────────────────────────────────────────
+
+async function openKandasModal() {
+  document.getElementById('kandas-modal').style.display = 'flex';
+  const token = localStorage.getItem('geo_token');
+  const res = await fetch('/api/kandas', {
+    headers: token ? { Authorization: 'Bearer ' + token } : {}
+  });
+  if (!res.ok) return;
+  kandasData = await res.json();
+  renderKandasList();
+}
+
+function closeKandasModal() {
+  document.getElementById('kandas-modal').style.display = 'none';
+}
+
+function renderKandasList() {
+  const container = document.getElementById('kandas-list');
+  if (!kandasData.length) {
+    container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
+    return;
+  }
+  container.innerHTML = kandasData.map(k => {
+    const addr = [k.oblast, k.raion, k.city, k.street, k.house, k.apt ? `кв.${k.apt}` : '']
+      .filter(Boolean).join(', ');
+    const hasCoords = k.lat != null && k.lon != null;
+    const coordStr  = hasCoords ? `${k.lat.toFixed(5)}, ${k.lon.toFixed(5)}` : 'не задано';
+
+    let extraHtml = '';
+    if (k.extra) {
+      const labels = {
+        nationality:'Национальность', note:'Примечание',
+        work_org:'Место работы', work_address:'Адрес работы',
+        work_type:'Вид работы', position:'Должность',
+        staff_pos:'Штатная должность', education:'Образование',
+        status:'Статус', benefits:'Льготы', bin_work:'БИН',
+      };
+      extraHtml = Object.entries(k.extra).map(([key, val]) =>
+        `<div><span style="color:#94a3b8;font-size:11px">${labels[key]||key}:</span> ${val}</div>`
+      ).join('');
+    }
+
+    return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#faf5ff">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div>
+          <div style="font-weight:700;color:#7c3aed;font-size:14px">${k.fio}</div>
+          <div style="font-size:11px;color:#64748b">
+            ИИН: ${k.iin||'—'} · ${k.dob||''} · ${k.gender||''} · ${k.citizenship||''}
+          </div>
+          ${addr ? `<div style="font-size:12px;margin-top:2px">📍 ${addr}</div>` : ''}
+          ${k.phone ? `<div style="font-size:12px">📞 ${k.phone}</div>` : ''}
+          ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
+        </div>
+        <div style="min-width:160px;text-align:right">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">
+            Координаты:<br>
+            <span style="font-family:monospace;color:${hasCoords?'#059669':'#ef4444'}">${coordStr}</span>
+          </div>
+          ${hasCoords ? `
+            <button class="action-btn" style="font-size:11px;padding:4px 8px;margin-bottom:3px"
+              onclick="flyToKandas(${k.lat},${k.lon})">На карте</button>
+          ` : ''}
+          <button class="action-btn" style="font-size:11px;padding:4px 8px"
+            onclick="startSetKandasCoord(${k.id})">Задать точку</button>
+          ${hasCoords ? `
+            <button class="action-btn" style="font-size:11px;padding:4px 8px;margin-top:3px;color:#ef4444;border-color:#fecaca"
+              onclick="clearKandasCoord(${k.id})">Сбросить</button>
+          ` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function flyToKandas(lat, lon) {
+  closeKandasModal();
+  map.flyTo([lat, lon], 16, { duration: 1.5 });
+  // Показать маркер кандаса
+  if (!document.getElementById('chk-kandas-lens').checked) {
+    document.getElementById('chk-kandas-lens').checked = true;
+    toggleKandasLens(true);
+  }
+}
+
+// Задать координату кликом по карте
+let _kandasSetMode = null;
+
+function startSetKandasCoord(id) {
+  closeKandasModal();
+  _kandasSetMode = id;
+  map.getContainer().style.cursor = 'crosshair';
+  // Показать подсказку
+  const hint = document.createElement('div');
+  hint.id = 'kandas-hint';
+  hint.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  hint.textContent = 'Кликните на карту чтобы задать координату кандаса. Нажмите Esc для отмены.';
+  document.body.appendChild(hint);
+
+  const onMapClick = async (e) => {
+    map.off('click', onMapClick);
+    map.getContainer().style.cursor = '';
+    document.getElementById('kandas-hint')?.remove();
+
+    const token = localStorage.getItem('geo_token');
+    const res = await fetch(`/api/kandas/${_kandasSetMode}/coords`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ lat: e.latlng.lat, lon: e.latlng.lng })
+    });
+    if (res.ok) {
+      // Обновить кэш и перерисовать
+      const idx = kandasData.findIndex(k => k.id === _kandasSetMode);
+      if (idx >= 0) {
+        kandasData[idx].lat = e.latlng.lat;
+        kandasData[idx].lon = e.latlng.lng;
+      }
+      _kandasSetMode = null;
+      // Обновить слой если линза включена
+      if (document.getElementById('chk-kandas-lens').checked) loadKandasLayer();
+      openKandasModal();
+    } else {
+      alert('Ошибка сохранения координаты');
+    }
+  };
+
+  map.on('click', onMapClick);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _kandasSetMode !== null) {
+      map.off('click', onMapClick);
+      map.getContainer().style.cursor = '';
+      document.getElementById('kandas-hint')?.remove();
+      _kandasSetMode = null;
+      openKandasModal();
+    }
+  }, { once: true });
+}
+
+async function clearKandasCoord(id) {
+  const token = localStorage.getItem('geo_token');
+  await fetch(`/api/kandas/${id}/coords`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  const idx = kandasData.findIndex(k => k.id === id);
+  if (idx >= 0) { kandasData[idx].lat = null; kandasData[idx].lon = null; }
+  if (document.getElementById('chk-kandas-lens').checked) loadKandasLayer();
+  renderKandasList();
 }
 
 function applyDistrict() {
