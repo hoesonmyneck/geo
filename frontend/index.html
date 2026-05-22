@@ -1523,9 +1523,9 @@ function buildKandasPopup(k) {
       <div style="font-size:11px;color:#64748b">
         ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}
       </div>
-      ${loc  ? `<div style="margin-top:4px;font-size:12px">📍 ${loc}</div>` : ''}
-      ${addr ? `<div style="font-size:12px">🏠 ${addr}</div>` : ''}
-      ${k.phone ? `<div style="font-size:12px">📞 ${k.phone}</div>` : ''}
+      ${loc  ? `<div style="margin-top:4px;font-size:12px">${loc}</div>` : ''}
+      ${addr ? `<div style="font-size:12px">${addr}</div>` : ''}
+      ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
       ${extra}
     </div>`;
 }
@@ -1594,8 +1594,8 @@ function renderKandasList() {
           <div style="font-size:11px;color:#64748b">
             ИИН: ${k.iin||'—'} · ${k.dob||''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender||''} · ${k.citizenship||''}
           </div>
-          ${addr ? `<div style="font-size:12px;margin-top:2px">📍 ${addr}</div>` : ''}
-          ${k.phone ? `<div style="font-size:12px">📞 ${k.phone}</div>` : ''}
+          ${addr ? `<div style="font-size:12px;margin-top:2px">${addr}</div>` : ''}
+          ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
           ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
         </div>
         <div style="min-width:160px;text-align:right">
