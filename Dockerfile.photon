@@ -6,13 +6,9 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /photon
 
-# Если скачивание с GitHub недоступно — положи photon-1.1.0.jar
-# рядом с этим Dockerfile и замени RUN wget на: COPY photon-1.1.0.jar photon.jar
-RUN apk add --no-cache wget && \
-    wget -q \
-      https://github.com/komoot/photon/releases/download/1.1.0/photon-1.1.0.jar \
-      -O photon.jar && \
-    apk del wget
+# photon-1.1.0.jar должен лежать рядом с этим Dockerfile
+# Скачать на сервере: curl -kLo photon-1.1.0.jar https://github.com/komoot/photon/releases/download/1.1.0/photon-1.1.0.jar
+COPY photon-1.1.0.jar photon.jar
 
 VOLUME ["/photon/photon_data"]
 EXPOSE 2322
