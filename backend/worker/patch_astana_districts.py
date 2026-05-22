@@ -45,7 +45,7 @@ def main():
     print(f"Loaded: L4={len(l4)}, L68={len(l68)}")
 
     # Загрузить захардкоженные районы Астаны
-    patch_data = json.loads(PATCH_SRC.read_text(encoding="utf-8"))
+    patch_data = json.loads(PATCH_SRC.read_text(encoding="utf-8-sig"))
     astana_dists = patch_data["features"]
     print(f"Patch source: {len(astana_dists)} Astana districts from {PATCH_SRC.name}\n")
 
