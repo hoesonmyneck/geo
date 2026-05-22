@@ -118,8 +118,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "6"
-          memory: "16g"
+          cpus: "4"
+          memory: "12g"
     networks:
       - geo-net
 
