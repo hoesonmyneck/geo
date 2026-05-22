@@ -1,39 +1,20 @@
 """
 Патчит districts_l4.geojson и districts_l68.geojson:
 заменяет неточные границы г.Астана и её районов
-точными данными из OSM Overpass API.
+точными данными из astana_districts_patch.json (захардкожены из OSM).
 
 Запуск ПОСЛЕ convert_local_geo.py:
     docker compose exec worker python /app/worker/convert_local_geo.py
     docker compose exec worker python /app/worker/patch_astana_districts.py
 """
 from __future__ import annotations
-import gzip, json, sys, time, urllib.parse
+import gzip, json
 from pathlib import Path
 
-# ── Используем проверенный код из fetch_districts.py ─────────────────────────
-sys.path.insert(0, "/app")
-from worker.fetch_districts import (
-    _relation_to_feature,
-    _OVERPASS_MIRRORS,
-)
-import httpx
+OUTPUT    = Path("/geo-data")
+PATCH_SRC = Path(__file__).parent / "astana_districts_patch.json"
 
-OUTPUT = Path("/geo-data")
-
-# Запрос:
-#  1. Найти area «Астана» (admin_level=4 или 2 — городское значение)
-#  2. Получить L4 полигон города и L8 районы внутри него
-# Overpass area ID = relation ID + 3600000000
-QUERY = """[out:json][timeout:120];
-area["name"="Астана"]["boundary"="administrative"]->.city;
-(
-  relation["boundary"="administrative"]["admin_level"~"^[24]$"]["name"~"[Аа]стана"];
-  relation["boundary"="administrative"]["admin_level"="8"](area.city);
-);
-out geom;"""
-
-# OSM Казахский → имя для GeoJSON (фронтенд в RAION_MAP переводит в КАТО)
+# Маппинг: OSM казахское название → имя которое ожидает фронтенд (RAION_MAP)
 NAME_NORMALIZE = {
     "Есіл ауданы":     "Есіл ауданы",
     "Алматы ауданы":   "Алматы ауданы",
@@ -41,29 +22,6 @@ NAME_NORMALIZE = {
     "Байқоңыр ауданы": "Байқоңыр ауданы",
     "Нұра ауданы":     "Нұра ауданы",
 }
-
-
-def fetch_overpass() -> dict:
-    body = urllib.parse.urlencode({"data": QUERY}).encode()
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "geo-astana-patcher/1.0",
-    }
-    last_err = None
-    for url in _OVERPASS_MIRRORS:
-        try:
-            print(f"  Trying {url} ...", flush=True)
-            with httpx.Client(timeout=150, follow_redirects=True, verify=False) as cl:
-                r = cl.post(url, content=body, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-                print(f"  OK — {len(r.content)//1024} KB, "
-                      f"{len(data.get('elements',[]))} elements", flush=True)
-                return data
-        except Exception as exc:
-            print(f"  Failed: {exc}", flush=True)
-            last_err = exc
-    raise last_err or RuntimeError("All Overpass mirrors failed")
 
 
 def save(name: str, features: list) -> None:
@@ -81,89 +39,62 @@ def save(name: str, features: list) -> None:
 
 
 def main():
-    # Загрузить текущие файлы
+    # Загрузить текущие сгенерированные файлы
     l4  = json.loads((OUTPUT / "districts_l4.geojson").read_bytes())["features"]
     l68 = json.loads((OUTPUT / "districts_l68.geojson").read_bytes())["features"]
-    print(f"Loaded: L4={len(l4)}, L68={len(l68)}\n")
+    print(f"Loaded: L4={len(l4)}, L68={len(l68)}")
 
-    # Скачать из Overpass
-    print("Fetching Astana from Overpass ...")
-    t0  = time.time()
-    osm = fetch_overpass()
-    rels = [e for e in osm.get("elements", []) if e["type"] == "relation"]
-    print(f"Got {len(rels)} relations in {time.time()-t0:.1f}s\n")
+    # Загрузить захардкоженные районы Астаны
+    patch_data = json.loads(PATCH_SRC.read_text(encoding="utf-8"))
+    astana_dists = patch_data["features"]
+    print(f"Patch source: {len(astana_dists)} Astana districts from {PATCH_SRC.name}\n")
 
-    astana_city = None   # L4 полигон города
-    astana_dists = []    # L8 районы
-
-    for rel in rels:
-        tags = rel.get("tags", {})
-        lvl  = tags.get("admin_level", "")
-        feat = _relation_to_feature(rel)     # проверенная функция из fetch_districts
-        if feat is None:
-            name = tags.get("name","?")
-            print(f"  SKIP (no geom): lvl={lvl!r} name={name!r}")
-            continue
-
-        name    = feat["properties"]["name"]
-        osm_id  = feat["properties"]["osm_id"]
-        bb      = feat["properties"]["bbox"]
-        geom    = feat["geometry"]
-
-        if lvl in ("2", "4") and any(t in name for t in ("Астана", "астана", "Нур-Султан", "Нұр-Сұлтан")):
-            # Берём наименьший bbox — это и есть сам город, а не область
-            if astana_city is None or (
-                (bb[2]-bb[0])*(bb[3]-bb[1]) < (astana_city["bb"][2]-astana_city["bb"][0])*(astana_city["bb"][3]-astana_city["bb"][1])
-            ):
-                astana_city = {"name": name, "osm_id": osm_id, "bb": bb, "geom": geom}
-            print(f"  [L{lvl}] City: {name!r}  bbox={[round(x,2) for x in bb]}")
-        elif lvl == "8":
-            norm_name = NAME_NORMALIZE.get(name, name)
-            astana_dists.append({
-                "name": norm_name, "osm_id": osm_id, "bb": bb, "geom": geom
-            })
-            print(f"  [L8] {name!r} → {norm_name!r}")
-
-    print(f"\nCity found: {astana_city is not None}, Districts: {len(astana_dists)}\n")
-
-    if not astana_city and not astana_dists:
-        print("ERROR: Nothing found from Overpass. Check network. Aborting.")
-        sys.exit(1)
-
-    # ── Патч L4 ──────────────────────────────────────────────────────────────
-    l4_new = [f for f in l4 if f["properties"].get("id_reg") != 71]
-    if astana_city:
-        l4_new.append({
-            "type": "Feature",
-            "properties": {
-                "name":        "г.Астана",
-                "admin_level": "4",
-                "id_reg":      71,
-                "bbox":        astana_city["bb"],
-            },
-            "geometry": astana_city["geom"],
-        })
-        print(f"Patched L4: replaced Astana city polygon")
-    else:
-        print("WARN: Astana L4 not found — keeping original raion_polygon.json version")
-
-    # ── Патч L68 ─────────────────────────────────────────────────────────────
-    l68_new = [f for f in l68 if f["properties"].get("id_reg") != 71]
     for d in astana_dists:
+        name = d["properties"].get("name", "?")
+        bb   = d["properties"].get("bbox", [])
+        print(f"  {name!r}  id_rai={d['properties'].get('id_rai')}  bbox={[round(x,2) for x in bb]}")
+
+    # ── Патч L4 (г.Астана — взять bbox из данных районов) ────────────────────
+    # Строим bbox города как объединение bbox всех районов
+    all_lons = [c for d in astana_dists for c in [d["properties"]["bbox"][0], d["properties"]["bbox"][2]]]
+    all_lats = [c for d in astana_dists for c in [d["properties"]["bbox"][1], d["properties"]["bbox"][3]]]
+    city_bbox = [min(all_lons), min(all_lats), max(all_lons), max(all_lats)]
+
+    # Ищем polygon города в l4 — если там уже есть нормальный (от patch_astana),
+    # используем его; иначе оставляем заглушку из convert_local_geo
+    l4_astana = next((f for f in l4 if f["properties"].get("id_reg") == 71), None)
+    l4_new = [f for f in l4 if f["properties"].get("id_reg") != 71]
+
+    if l4_astana:
+        # Обновить только bbox, геометрию сохранить
+        l4_astana["properties"]["bbox"] = city_bbox
+        l4_new.append(l4_astana)
+        print(f"\nPatched L4: updated Astana city bbox → {[round(x,2) for x in city_bbox]}")
+    else:
+        print("\nWARN: Astana L4 not found — nothing to patch in L4")
+
+    # ── Патч L68 (убрать старые районы Астаны, добавить правильные) ──────────
+    l68_new = [f for f in l68 if f["properties"].get("id_reg") != 71]
+    added = 0
+    for d in astana_dists:
+        props = d["properties"]
+        name  = NAME_NORMALIZE.get(props.get("name", ""), props.get("name", ""))
         l68_new.append({
             "type": "Feature",
             "properties": {
-                "name":        d["name"],
+                "name":        name,
                 "admin_level": "6",
-                "id_rai":      d["osm_id"],
+                "id_rai":      props.get("id_rai"),
                 "id_reg":      71,
                 "region":      "г.Астана",
-                "bbox":        d["bb"],
+                "bbox":        props.get("bbox"),
             },
-            "geometry": d["geom"],
+            "geometry": d["geometry"],
         })
-        print(f"  Added district: {d['name']!r}")
-    print(f"Patched L68: removed old Astana, added {len(astana_dists)} from OSM\n")
+        added += 1
+        print(f"  Added: {name!r}")
+
+    print(f"\nPatched L68: removed old Astana districts, added {added} from patch file\n")
 
     save("districts_l4.geojson",  l4_new)
     save("districts_l68.geojson", l68_new)
