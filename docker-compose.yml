@@ -105,11 +105,11 @@ services:
     container_name: nominatim
     restart: "no"
     ports:
-      - "8080:8080"
+      - "8088:8080"
     environment:
       PBF_PATH:                /nominatim/pbf/kazakhstan-latest.osm.pbf
       IMPORT_STYLE:            full
-      THREADS:                 8
+      THREADS:                 4
       SKIP_IMPORT_IF_DB_EXISTS: "true"
     volumes:
       - ./data/pbf:/nominatim/pbf
