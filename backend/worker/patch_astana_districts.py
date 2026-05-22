@@ -73,8 +73,18 @@ def main():
     else:
         print("\nWARN: Astana L4 not found — nothing to patch in L4")
 
-    # ── Патч L68 (убрать старые районы Астаны, добавить правильные) ──────────
-    l68_new = [f for f in l68 if f["properties"].get("id_reg") != 71]
+    # ── Патч L68 (убрать только те районы Астаны которые мы ЗАМЕНЯЕМ,
+    #             остальные id_reg=71 — например Сарайшық — сохранить) ──────────
+    replace_names = set(NAME_NORMALIZE.keys()) | set(NAME_NORMALIZE.values())
+    l68_new = [
+        f for f in l68
+        if not (
+            f["properties"].get("id_reg") == 71
+            and f["properties"].get("name", "") in replace_names
+        )
+    ]
+    kept = len(l68) - len(l68_new)
+    print(f"Removed {kept} old Astana districts being replaced")
     added = 0
     for d in astana_dists:
         props = d["properties"]
