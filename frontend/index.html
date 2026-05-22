@@ -692,6 +692,7 @@ function startApp() {
     // Скрыть кнопки не нужные кандасам
     document.getElementById('btn-districts').style.display = 'none';
     document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
+    document.querySelector('[onclick="openListModal()"]').style.display = 'none';
     // Сразу включить линзу кандасов
     const lensChk = document.getElementById('chk-kandas-lens');
     if (lensChk) { lensChk.checked = true; }
