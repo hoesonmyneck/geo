@@ -10,7 +10,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_editor
-from app.db.models import EditLog, Place, User
+from app.db.models import EditLog, Place, User, KANDAS_ROLES
 from app.db.session import get_db
 
 
@@ -96,12 +96,15 @@ async def get_places_bbox(
     kind: str = Query("house"),
     confidence: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     """
     Возвращает объекты внутри bbox с агрегированной демографией.
     Один SQL-запрос с LEFT JOIN + GROUP BY — без N+1.
     """
+    if current_user.role in KANDAS_ROLES:
+        from fastapi import Response as FR
+        return FR(content=b'{"features":[]}', media_type="application/json")
     # Строим агрегирующий запрос через text() для гибкости
     where_parts = [
         "kind = :kind",

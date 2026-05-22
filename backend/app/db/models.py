@@ -26,9 +26,13 @@ class Base(DeclarativeBase):
 # ─── Роли пользователей ──────────────────────────────────────────────────────
 
 class UserRole(str, enum.Enum):
-    viewer = "viewer"
-    editor = "editor"
-    admin  = "admin"
+    viewer        = "viewer"
+    editor        = "editor"
+    admin         = "admin"
+    admin_kandas  = "admin_kandas"   # видит только кандасов, может редактировать
+    viewer_kandas = "viewer_kandas"  # видит только кандасов, только чтение
+
+KANDAS_ROLES = {UserRole.admin_kandas, UserRole.viewer_kandas}
 
 
 # ─── Тип географического объекта ─────────────────────────────────────────────
