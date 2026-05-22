@@ -125,6 +125,8 @@ services:
 
   # -----------------------------------------------------------------
   # Photon — fuzzy/multilingual geocoder
+  # При первом запуске импортирует индекс из Nominatim БД (~1 час),
+  # при последующих — просто стартует сервер.
   # -----------------------------------------------------------------
   photon:
     build:
@@ -137,7 +139,22 @@ services:
       - "2322:2322"
     volumes:
       - photon-data:/photon/photon_data
-    command: ["-listen-ip", "0.0.0.0"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ ! -f /photon/photon_data/index.fst ]; then
+          echo "==> Importing from Nominatim (first run)..."
+          java -jar photon.jar \
+            -nominatim-import \
+            -host nominatim \
+            -port 5432 \
+            -database nominatim \
+            -user nominatim \
+            -password nominatim123 \
+            -languages ru,kk,en
+        fi
+        echo "==> Starting Photon server..."
+        exec java -jar photon.jar -listen-ip 0.0.0.0
     networks:
       - geo-net
 
