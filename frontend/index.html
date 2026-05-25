@@ -1711,7 +1711,7 @@ function _kandasExtraRows(extra, asTable) {
 
   if (!parts.length) return '';
   return asTable
-    ? `<table style="font-size:11px;margin-top:6px;border-collapse:collapse">${parts.join('')}</table>`
+    ? `<table style="font-size:13px;margin-top:6px;border-collapse:collapse">${parts.join('')}</table>`
     : parts.join('');
 }
 
@@ -1721,13 +1721,13 @@ function buildKandasPopup(k) {
   return `
     <div style="font-size:13px">
       <div style="font-weight:700;color:#7c3aed;margin-bottom:4px">${k.fio}</div>
-      ${k.iin ? `<div style="font-size:11px;color:#64748b">ИИН: ${k.iin}</div>` : ''}
-      <div style="font-size:11px;color:#64748b">
+      ${k.iin ? `<div style="font-size:13px;color:#64748b">ИИН: ${k.iin}</div>` : ''}
+      <div style="font-size:13px;color:#64748b">
         ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
       </div>
-      ${loc  ? `<div style="margin-top:4px;font-size:12px">${loc}</div>` : ''}
-      ${addr ? `<div style="font-size:12px">${addr}</div>` : ''}
-      ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
+      ${loc  ? `<div style="margin-top:4px;font-size:13px">${loc}</div>` : ''}
+      ${addr ? `<div style="font-size:13px">${addr}</div>` : ''}
+      ${k.phone ? `<div style="font-size:13px">Тел: ${k.phone}</div>` : ''}
       ${_kandasExtraRows(k.extra, true)}
     </div>`;
 }
