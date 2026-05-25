@@ -1643,7 +1643,7 @@ const KANDAS_FIELD_ORDER = [
   'bin_work',    'work_org',    'work_address', 'position',
   'staff_pos',   'work_type',   'education',    'specialty',
   'status',      'cks_cat',     'benefits',     'auto',
-  'real_estate', 'nationality', 'note',
+  'real_estate', 'nationality', 'note',         'family',
 ];
 const KANDAS_FIELD_LABELS = {
   bin_work:    'БИН работодателя',
@@ -1661,27 +1661,58 @@ const KANDAS_FIELD_LABELS = {
   real_estate: 'Недвижимость',
   nationality: 'Национальность',
   note:        'Примечание',
+  family:      'Семья',
 };
 
+// Рендер блока «Семья» из массива [{role, fio, iin}, ...]
+function _renderFamily(members, asTable) {
+  if (!Array.isArray(members) || !members.length) return '—';
+  // Группируем: Муж отдельно, всех Ребёнок — вместе
+  const groups = {};
+  for (const m of members) {
+    const r = m.role || 'Член семьи';
+    if (!groups[r]) groups[r] = [];
+    groups[r].push(`${m.fio}${m.iin ? ` (${m.iin})` : ''}`);
+  }
+  const lines = Object.entries(groups)
+    .map(([role, list]) => `<span style="color:#374151"><b>${role}:</b> ${list.join(', ')}</span>`)
+    .join('<br>');
+  return lines;
+}
+
 function _kandasExtraRows(extra, asTable) {
-  // Все поля из заданного порядка — пустые показываем как "—"
   const base = extra || {};
   const ordered = [...KANDAS_FIELD_ORDER, ...Object.keys(base).filter(k => !KANDAS_FIELD_ORDER.includes(k))];
-  const items = ordered.map(k => ({
-    label: KANDAS_FIELD_LABELS[k] || k,
-    val: (base[k] != null && base[k] !== '') ? base[k] : '—',
-    empty: base[k] == null || base[k] === '',
-  }));
-  if (asTable) {
-    return '<table style="font-size:11px;margin-top:6px;border-collapse:collapse">' +
-      items.map(({label, val, empty}) =>
+  const parts = [];
+
+  for (const k of ordered) {
+    const label = KANDAS_FIELD_LABELS[k] || k;
+    const raw   = base[k];
+    const empty = raw == null || raw === '' || (Array.isArray(raw) && raw.length === 0);
+
+    let rendered;
+    if (k === 'family' && Array.isArray(raw) && raw.length) {
+      rendered = _renderFamily(raw, asTable);
+    } else {
+      rendered = empty ? '<span style="color:#cbd5e1">—</span>' : String(raw);
+    }
+
+    if (asTable) {
+      parts.push(
         `<tr><td style="color:#64748b;padding-right:8px;white-space:nowrap;vertical-align:top">${label}</td>` +
-        `<td style="${empty ? 'color:#cbd5e1' : ''}">${val}</td></tr>`
-      ).join('') + '</table>';
+        `<td>${rendered}</td></tr>`
+      );
+    } else {
+      parts.push(
+        `<div><span style="color:#94a3b8;font-size:11px">${label}:</span> ${rendered}</div>`
+      );
+    }
   }
-  return items.map(({label, val, empty}) =>
-    `<div><span style="color:#94a3b8;font-size:11px">${label}:</span> <span style="${empty ? 'color:#cbd5e1' : ''}">${val}</span></div>`
-  ).join('');
+
+  if (!parts.length) return '';
+  return asTable
+    ? `<table style="font-size:11px;margin-top:6px;border-collapse:collapse">${parts.join('')}</table>`
+    : parts.join('');
 }
 
 function buildKandasPopup(k) {
