@@ -11,6 +11,9 @@ BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql.gz"
 docker compose exec -T postgres pg_dump -U "${POSTGRES_USER:-geo}" "${POSTGRES_DB:-geo}" \
   | gzip > "backups/${BACKUP_FILE}" && echo "Бэкап: backups/${BACKUP_FILE}" \
   || echo "WARN: бэкап не удался (БД возможно не запущена)"
+# Оставляем только последние 5 бэкапов
+ls -t backups/backup_*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm --
+echo "Старые бэкапы удалены, оставлено последних 10."
 
 echo "=== [3/5] Собираем образы ==="
 docker compose build backend
