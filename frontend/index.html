@@ -326,24 +326,26 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
-    <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Кандасы</button>
+    <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <label class="cat-item" style="margin-top:6px">
       <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
       Скрыть точки
     </label>
-    <label class="cat-item" style="margin-top:4px">
+    <!-- <label class="cat-item" style="margin-top:4px">
       <input type="checkbox" id="chk-kandas-lens" onchange="toggleKandasLens(this.checked)">
       <span style="color:#7c3aed;font-weight:600">Линза кандасов</span>
-    </label>
+    </label> -->
     <div id="dist-legend" style="display:none;margin-top:6px;font-size:11px;line-height:1.9"></div>
-    <div style="margin-top:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px">Выбрать область</div>
-    <div style="display:flex;gap:4px">
-      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('rect')" title="Прямоугольник">&#9645; Квадрат</button>
-      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('circle')" title="Круг">&#9711; Круг</button>
-      <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('polygon')" title="Полигон">&#9649; Полигон</button>
+    <div id="draw-tools-section">
+      <div style="margin-top:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px">Выбрать область</div>
+      <div style="display:flex;gap:4px">
+        <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('rect')" title="Прямоугольник">&#9645; Квадрат</button>
+        <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('circle')" title="Круг">&#9711; Круг</button>
+        <button class="action-btn" style="flex:1;padding:6px 4px;font-size:12px;text-align:center" onclick="startDraw('polygon')" title="Полигон">&#9649; Полигон</button>
+      </div>
+      <button class="action-btn" id="draw-clear-btn" style="display:none;margin-top:4px" onclick="clearDraw()">Очистить область</button>
     </div>
-    <button class="action-btn" id="draw-clear-btn" style="display:none;margin-top:4px" onclick="clearDraw()">Очистить область</button>
     <div id="admin-tools" style="display:none;margin-top:4px">
       <button class="action-btn primary" onclick="openImportModal()" style="margin-bottom:4px">Загрузить данные (xlsx)</button>
       <button class="action-btn" onclick="openUsersModal()" style="width:100%">Управление пользователями</button>
@@ -447,8 +449,15 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <option value="Алматинская обл.">Алматинская обл.</option>
     </select>
   </div>
-  <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b>Людей:</b> <span id="st-people">0</span><br>
-  <span id="st-user" style="font-size:12px;color:#64748b"></span>
+  <!-- Обычный режим: дома / люди -->
+  <div id="st-normal-info">
+    <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b>Людей:</b> <span id="st-people">0</span><br>
+    <span id="st-user" style="font-size:12px;color:#64748b"></span>
+  </div>
+  <!-- Режим кандасов: кандасы по городам -->
+  <div id="st-kandas-info" style="display:none;font-size:12px;line-height:1.8">
+    <span id="st-kandas-counts"></span>
+  </div>
 </div>
 
 <!-- Панель статистики выделенной области -->
@@ -572,12 +581,14 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 
 <!-- ── Модальное окно: Кандасы ── -->
 <div class="modal-overlay" id="kandas-modal">
-  <div class="coord-box" style="width:720px;max-width:96vw;max-height:85vh;overflow-y:auto">
-    <h3 style="color:#7c3aed">Реестр кандасов</h3>
-    <div id="kandas-list" style="display:flex;flex-direction:column;gap:12px"></div>
-    <div style="margin-top:16px;text-align:right">
-      <button class="action-btn" onclick="closeKandasModal()">Закрыть</button>
+  <div class="coord-box" style="width:720px;max-width:96vw;max-height:85vh;overflow-y:auto;padding:0;display:flex;flex-direction:column">
+    <!-- Заголовок прилипает при скролле -->
+    <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="color:#7c3aed;margin:0">Реестр кандасов</h3>
+      <button onclick="closeKandasModal()" title="Закрыть"
+        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
     </div>
+    <div id="kandas-list" style="display:flex;flex-direction:column;gap:12px;padding:16px 20px 20px"></div>
   </div>
 </div>
 
@@ -681,7 +692,6 @@ function startApp() {
 
   if (isKandasRole()) {
     // ── Режим кандасов: скрыть всё лишнее ──────────────────
-    document.getElementById('stats-panel').style.display = 'none';
     // Скрыть секции сайдбара кроме Инструментов
     ['cats', 'dists', 'conf', 'clust'].forEach(id => {
       const head = document.querySelector(`.s-head[onclick*="'${id}'"]`);
@@ -690,12 +700,17 @@ function startApp() {
       if (body) body.style.display = 'none';
     });
     // Скрыть кнопки не нужные кандасам
-    document.getElementById('btn-districts').style.display = 'none';
     document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
+    document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
-    // Сразу включить линзу кандасов
-    const lensChk = document.getElementById('chk-kandas-lens');
-    if (lensChk) { lensChk.checked = true; }
+    // Скрыть "Линза кандасов" — для кандас-аккаунта линза всегда включена
+    document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
+    // Показать кнопку границ (нужна кандасам)
+    document.getElementById('btn-districts').style.display = '';
+    // Показать кандас-панель вместо обычной
+    document.getElementById('stats-panel').style.display = 'block';
+    document.getElementById('st-kandas-info').style.display = 'block';
+    document.getElementById('st-normal-info').style.display = 'none';
   } else {
     // ── Обычный режим: скрыть кнопку Кандасы и линзу ────────
     document.getElementById('stats-panel').style.display = 'block';
@@ -724,7 +739,10 @@ function initMap() {
     'Рельеф':     L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopoMap', maxZoom:17}),
   };
   baseLayers['Стандарт'].addTo(map);
-  L.control.layers(baseLayers, {}, {position:'topright', collapsed:true}).addTo(map);
+  const layerCtrl = L.control.layers(baseLayers, {}, {
+    position: isKandasRole() ? 'bottomleft' : 'topright',
+    collapsed: true
+  }).addTo(map);
 
   clusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
@@ -1497,10 +1515,23 @@ function toggleHideMarkers(hide) {
 // ═══════════════════════════════════════════════════════
 //  КАНДАСЫ — реестр, линза, карточки
 // ═══════════════════════════════════════════════════════
-let kandasLayer = null;   // слой с маркерами кандасов
-let kandasData  = [];     // кэш списка
+let kandasLayer   = null;   // слой с маркерами кандасов (дом)
+let kandasData    = [];     // кэш списка
 
-// Фиолетовая иконка для кандасов
+// Для кандас-аккаунтов чекбокс удалён из DOM — линза всегда включена
+function _isKandasLensOn() {
+  const el = document.getElementById('chk-kandas-lens');
+  return el ? el.checked : isKandasRole();
+}
+function _setKandasLens(val) {
+  const el = document.getElementById('chk-kandas-lens');
+  if (el) el.checked = val;
+}
+// Слои текущей «открытой» точки работы
+let _workMarker   = null;
+let _workLine     = null;
+
+// Фиолетовая иконка "К" — место жительства
 const kandasIcon = L.divIcon({
   className: '',
   html: `<div style="
@@ -1514,6 +1545,41 @@ const kandasIcon = L.divIcon({
   popupAnchor: [0, -16],
 });
 
+// Оранжевая иконка "Р" — место работы
+const workIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    width:28px;height:28px;border-radius:50%;
+    background:#ea580c;border:3px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:12px;font-weight:700">Р</div>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -16],
+});
+
+function _showWorkMarker(k) {
+  _hideWorkMarker();
+  if (k.work_lat == null || k.work_lon == null) return;
+  if (k.lat == null || k.lon == null) return;
+  // Линия от дома к работе
+  _workLine = L.polyline(
+    [[k.lat, k.lon], [k.work_lat, k.work_lon]],
+    { color: '#ea580c', weight: 2, dashArray: '6 4', opacity: 0.8 }
+  ).addTo(map);
+  // Маркер работы
+  const label = k.extra?.work_org ? `<b>Место работы</b><br>${k.extra.work_org}` : '<b>Место работы</b>';
+  _workMarker = L.marker([k.work_lat, k.work_lon], { icon: workIcon })
+    .bindPopup(label, { maxWidth: 240 })
+    .addTo(map);
+}
+
+function _hideWorkMarker() {
+  if (_workMarker) { map.removeLayer(_workMarker); _workMarker = null; }
+  if (_workLine)   { map.removeLayer(_workLine);   _workLine   = null; }
+}
+
 async function loadKandasLayer() {
   const token = localStorage.getItem('geo_token');
   const res = await fetch('/api/kandas', {
@@ -1523,6 +1589,7 @@ async function loadKandasLayer() {
   kandasData = await res.json();
 
   if (kandasLayer) { map.removeLayer(kandasLayer); kandasLayer = null; }
+  _hideWorkMarker();
   kandasLayer = L.layerGroup();
 
   for (const k of kandasData) {
@@ -1530,39 +1597,107 @@ async function loadKandasLayer() {
     const marker = L.marker([k.lat, k.lon], { icon: kandasIcon });
     marker.bindPopup(buildKandasPopup(k), { maxWidth: 320 });
     marker._kandasData = k;
+    // Показывать/скрывать маркер работы при открытии/закрытии попапа
+    marker.on('popupopen',  () => _showWorkMarker(k));
+    marker.on('popupclose', () => _hideWorkMarker());
     kandasLayer.addLayer(marker);
   }
   map.addLayer(kandasLayer);
+  if (isKandasRole()) updateKandasStats();
+}
+
+function updateKandasStats() {
+  if (!kandasData) return;
+  // Все регионы из дропдауна
+  const allRegions = Array.from(
+    document.querySelectorAll('#goto-region option[value]:not([value=""])')
+  ).map(o => o.value);
+  // Подсчёт кандасов по полю oblast
+  const counts = {};
+  for (const r of allRegions) counts[r] = 0;
+  for (const k of kandasData) {
+    const region = k.oblast;
+    if (!region) continue;
+    // Найти совпадение в allRegions (нечёткое — ищем по вхождению)
+    const matched = allRegions.find(r =>
+      r.toLowerCase() === region.toLowerCase() ||
+      region.toLowerCase().includes(r.toLowerCase().replace(' обл.', '')) ||
+      r.toLowerCase().replace(' обл.', '').includes(region.toLowerCase())
+    ) || region;
+    counts[matched] = (counts[matched] || 0) + 1;
+  }
+  // Сортировка: сначала с кандасами (> 0), потом нулевые
+  const lines = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([r, n]) => {
+      const color = n > 0 ? '#374151' : '#94a3b8';
+      return `<span style="white-space:nowrap;color:${color}"><b>${r}:</b> ${n}</span>`;
+    })
+    .join('<br>');
+  const el = document.getElementById('st-kandas-counts');
+  if (el) el.innerHTML = lines || '<span style="color:#94a3b8">Нет данных</span>';
+}
+
+// Единый маппинг меток и порядок отображения полей extra для кандасов
+const KANDAS_FIELD_ORDER = [
+  'bin_work',    'work_org',    'work_address', 'position',
+  'staff_pos',   'work_type',   'education',    'specialty',
+  'status',      'cks_cat',     'benefits',     'auto',
+  'real_estate', 'nationality', 'note',
+];
+const KANDAS_FIELD_LABELS = {
+  bin_work:    'БИН работодателя',
+  work_org:    'Название организации',
+  work_address:'Адрес работы',
+  position:    'Должность по НКЗ',
+  staff_pos:   'Штатная должность',
+  work_type:   'Вид работы',
+  education:   'Образование',
+  specialty:   'Специальность',
+  status:      'Статус',
+  cks_cat:     'Категория по ЦКС',
+  benefits:    'Льготы',
+  auto:        'Авто',
+  real_estate: 'Недвижимость',
+  nationality: 'Национальность',
+  note:        'Примечание',
+};
+
+function _kandasExtraRows(extra, asTable) {
+  // Все поля из заданного порядка — пустые показываем как "—"
+  const base = extra || {};
+  const ordered = [...KANDAS_FIELD_ORDER, ...Object.keys(base).filter(k => !KANDAS_FIELD_ORDER.includes(k))];
+  const items = ordered.map(k => ({
+    label: KANDAS_FIELD_LABELS[k] || k,
+    val: (base[k] != null && base[k] !== '') ? base[k] : '—',
+    empty: base[k] == null || base[k] === '',
+  }));
+  if (asTable) {
+    return '<table style="font-size:11px;margin-top:6px;border-collapse:collapse">' +
+      items.map(({label, val, empty}) =>
+        `<tr><td style="color:#64748b;padding-right:8px;white-space:nowrap;vertical-align:top">${label}</td>` +
+        `<td style="${empty ? 'color:#cbd5e1' : ''}">${val}</td></tr>`
+      ).join('') + '</table>';
+  }
+  return items.map(({label, val, empty}) =>
+    `<div><span style="color:#94a3b8;font-size:11px">${label}:</span> <span style="${empty ? 'color:#cbd5e1' : ''}">${val}</span></div>`
+  ).join('');
 }
 
 function buildKandasPopup(k) {
   const addr = [k.street, k.house, k.apt ? `кв.${k.apt}` : ''].filter(Boolean).join(', ');
   const loc  = [k.oblast, k.raion, k.city].filter(Boolean).join(', ');
-  let extra = '';
-  if (k.extra) {
-    const rows = Object.entries(k.extra).map(([key, val]) => {
-      const label = {
-        nationality:'Национальность', note:'Примечание',
-        work_org:'Место работы', work_address:'Адрес работы',
-        work_type:'Вид работы', position:'Должность',
-        staff_pos:'Штатная должность', education:'Образование',
-        status:'Статус', benefits:'Льготы', bin_work:'БИН работодателя',
-      }[key] || key;
-      return `<tr><td style="color:#64748b;padding-right:8px;white-space:nowrap">${label}</td><td>${val}</td></tr>`;
-    }).join('');
-    if (rows) extra = `<table style="font-size:11px;margin-top:6px;border-collapse:collapse">${rows}</table>`;
-  }
   return `
     <div style="font-size:13px">
       <div style="font-weight:700;color:#7c3aed;margin-bottom:4px">${k.fio}</div>
       ${k.iin ? `<div style="font-size:11px;color:#64748b">ИИН: ${k.iin}</div>` : ''}
       <div style="font-size:11px;color:#64748b">
-        ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}
+        ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
       </div>
       ${loc  ? `<div style="margin-top:4px;font-size:12px">${loc}</div>` : ''}
       ${addr ? `<div style="font-size:12px">${addr}</div>` : ''}
       ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
-      ${extra}
+      ${_kandasExtraRows(k.extra, true)}
     </div>`;
 }
 
@@ -1609,45 +1744,46 @@ function renderKandasList() {
     const hasCoords = k.lat != null && k.lon != null;
     const coordStr  = hasCoords ? `${k.lat.toFixed(5)}, ${k.lon.toFixed(5)}` : 'не задано';
 
-    let extraHtml = '';
-    if (k.extra) {
-      const labels = {
-        nationality:'Национальность', note:'Примечание',
-        work_org:'Место работы', work_address:'Адрес работы',
-        work_type:'Вид работы', position:'Должность',
-        staff_pos:'Штатная должность', education:'Образование',
-        status:'Статус', benefits:'Льготы', bin_work:'БИН',
-      };
-      extraHtml = Object.entries(k.extra).map(([key, val]) =>
-        `<div><span style="color:#94a3b8;font-size:11px">${labels[key]||key}:</span> ${val}</div>`
-      ).join('');
-    }
+    const extraHtml = _kandasExtraRows(k.extra, false);
 
     return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#faf5ff">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div>
           <div style="font-weight:700;color:#7c3aed;font-size:14px">${k.fio}</div>
           <div style="font-size:11px;color:#64748b">
-            ИИН: ${k.iin||'—'} · ${k.dob||''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender||''} · ${k.citizenship||''}
+            ИИН: ${k.iin||'—'} · ${k.dob||''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender||''} · ${k.citizenship||''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
           </div>
           ${addr ? `<div style="font-size:12px;margin-top:2px">${addr}</div>` : ''}
           ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
           ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
         </div>
-        <div style="min-width:160px;text-align:right">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">
-            Координаты:<br>
+        <div style="min-width:170px;text-align:right">
+          <div style="font-size:11px;color:#64748b;margin-bottom:2px">
+            Дом:<br>
             <span style="font-family:monospace;color:${hasCoords?'#059669':'#ef4444'}">${coordStr}</span>
           </div>
           ${hasCoords ? `
-            <button class="action-btn" style="font-size:11px;padding:4px 8px;margin-bottom:3px"
+            <button class="action-btn" style="font-size:11px;padding:3px 7px;margin-bottom:2px"
               onclick="flyToKandas(${k.lat},${k.lon})">На карте</button>
           ` : ''}
-          <button class="action-btn" style="font-size:11px;padding:4px 8px"
-            onclick="startSetKandasCoord(${k.id})">Задать точку</button>
+          <button class="action-btn" style="font-size:11px;padding:3px 7px"
+            onclick="startSetKandasCoord(${k.id})">Задать дом</button>
           ${hasCoords ? `
-            <button class="action-btn" style="font-size:11px;padding:4px 8px;margin-top:3px;color:#ef4444;border-color:#fecaca"
-              onclick="clearKandasCoord(${k.id})">Сбросить</button>
+            <button class="action-btn" style="font-size:11px;padding:3px 7px;margin-top:2px;color:#ef4444;border-color:#fecaca"
+              onclick="clearKandasCoord(${k.id})">Сбросить дом</button>
+          ` : ''}
+          <hr style="margin:6px 0;border:none;border-top:1px solid #e2e8f0">
+          <div style="font-size:11px;color:#64748b;margin-bottom:2px">
+            Работа:<br>
+            <span style="font-family:monospace;color:${k.work_lat!=null?'#ea580c':'#94a3b8'}">
+              ${k.work_lat!=null ? `${k.work_lat.toFixed(5)}, ${k.work_lon.toFixed(5)}` : 'не задано'}
+            </span>
+          </div>
+          <button class="action-btn" style="font-size:11px;padding:3px 7px"
+            onclick="startSetWorkCoord(${k.id})">Задать работу</button>
+          ${k.work_lat!=null ? `
+            <button class="action-btn" style="font-size:11px;padding:3px 7px;margin-top:2px;color:#ef4444;border-color:#fecaca"
+              onclick="clearWorkCoord(${k.id})">Сбросить работу</button>
           ` : ''}
         </div>
       </div>
@@ -1658,9 +1794,8 @@ function renderKandasList() {
 function flyToKandas(lat, lon) {
   closeKandasModal();
   map.flyTo([lat, lon], 16, { duration: 1.5 });
-  // Показать маркер кандаса
-  if (!document.getElementById('chk-kandas-lens').checked) {
-    document.getElementById('chk-kandas-lens').checked = true;
+  if (!_isKandasLensOn()) {
+    _setKandasLens(true);
     toggleKandasLens(true);
   }
 }
@@ -1699,7 +1834,7 @@ function startSetKandasCoord(id) {
       }
       _kandasSetMode = null;
       // Обновить слой если линза включена
-      if (document.getElementById('chk-kandas-lens').checked) loadKandasLayer();
+      if (_isKandasLensOn()) loadKandasLayer();
       openKandasModal();
     } else {
       alert('Ошибка сохранения координаты');
@@ -1726,7 +1861,70 @@ async function clearKandasCoord(id) {
   });
   const idx = kandasData.findIndex(k => k.id === id);
   if (idx >= 0) { kandasData[idx].lat = null; kandasData[idx].lon = null; }
-  if (document.getElementById('chk-kandas-lens').checked) loadKandasLayer();
+  if (_isKandasLensOn()) loadKandasLayer();
+  renderKandasList();
+}
+
+// ── Координаты места работы ───────────────────────────────────────────────────
+let _workSetMode = null;  // id кандаса для установки координат работы
+
+function startSetWorkCoord(id) {
+  closeKandasModal();
+  _workSetMode = id;
+  map.getContainer().style.cursor = 'crosshair';
+  const hint = document.createElement('div');
+  hint.id = 'work-hint';
+  hint.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#ea580c;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  hint.textContent = 'Кликните на карту чтобы задать место работы. Нажмите Esc для отмены.';
+  document.body.appendChild(hint);
+
+  const onMapClick = async (e) => {
+    map.off('click', onMapClick);
+    map.getContainer().style.cursor = '';
+    document.getElementById('work-hint')?.remove();
+
+    const token = localStorage.getItem('geo_token');
+    const res = await fetch(`/api/kandas/${_workSetMode}/work_coords`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ lat: e.latlng.lat, lon: e.latlng.lng })
+    });
+    if (res.ok) {
+      const idx = kandasData.findIndex(k => k.id === _workSetMode);
+      if (idx >= 0) {
+        kandasData[idx].work_lat = e.latlng.lat;
+        kandasData[idx].work_lon = e.latlng.lng;
+      }
+      _workSetMode = null;
+      if (_isKandasLensOn()) loadKandasLayer();
+      openKandasModal();
+    } else {
+      alert('Ошибка сохранения координат работы');
+    }
+  };
+
+  map.on('click', onMapClick);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _workSetMode !== null) {
+      map.off('click', onMapClick);
+      map.getContainer().style.cursor = '';
+      document.getElementById('work-hint')?.remove();
+      _workSetMode = null;
+      openKandasModal();
+    }
+  }, { once: true });
+}
+
+async function clearWorkCoord(id) {
+  const token = localStorage.getItem('geo_token');
+  await fetch(`/api/kandas/${id}/work_coords`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  const idx = kandasData.findIndex(k => k.id === id);
+  if (idx >= 0) { kandasData[idx].work_lat = null; kandasData[idx].work_lon = null; }
+  _hideWorkMarker();
+  if (_isKandasLensOn()) loadKandasLayer();
   renderKandasList();
 }
 

@@ -193,11 +193,14 @@ class Kandas(Base):
     phone:   Mapped[str | None] = mapped_column(String(64),  nullable=True)
     # Доп. данные (работа, учёба, льготы — всё в JSONB)
     extra:   Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # Координаты
+    # Координаты проживания
     lat:          Mapped[float | None] = mapped_column(Float,    nullable=True)
     lon:          Mapped[float | None] = mapped_column(Float,    nullable=True)
     coord_source: Mapped[str | None]   = mapped_column(String(16), nullable=True, default="none")
     edited_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Координаты работы (задаются вручную)
+    work_lat:     Mapped[float | None] = mapped_column(Float,    nullable=True)
+    work_lon:     Mapped[float | None] = mapped_column(Float,    nullable=True)
     created_at:   Mapped[datetime]        = mapped_column(DateTime, server_default=func.now())
 
 

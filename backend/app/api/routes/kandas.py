@@ -36,6 +36,8 @@ class KandasOut(BaseModel):
     lon:         float | None
     coord_source: str | None
     edited_at:   datetime | None
+    work_lat:    float | None
+    work_lon:    float | None
 
     class Config:
         from_attributes = True
@@ -116,5 +118,45 @@ async def clear_coords(
     k.lat = k.lon = None
     k.coord_source = "none"
     k.edited_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/{kandas_id}/work_coords")
+async def set_work_coords(
+    kandas_id: int,
+    body: CoordsIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_kandas_role),
+):
+    """Установить координаты места работы (admin_kandas)."""
+    if user.role != UserRole.admin_kandas:
+        raise HTTPException(403, "Only admin_kandas can edit")
+
+    k = await db.get(Kandas, kandas_id)
+    if not k:
+        raise HTTPException(404, "Not found")
+
+    k.work_lat = body.lat
+    k.work_lon = body.lon
+    await db.commit()
+    return {"ok": True, "work_lat": k.work_lat, "work_lon": k.work_lon}
+
+
+@router.delete("/{kandas_id}/work_coords")
+async def clear_work_coords(
+    kandas_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_kandas_role),
+):
+    """Сбросить координаты места работы (admin_kandas)."""
+    if user.role != UserRole.admin_kandas:
+        raise HTTPException(403, "Only admin_kandas can edit")
+
+    k = await db.get(Kandas, kandas_id)
+    if not k:
+        raise HTTPException(404, "Not found")
+
+    k.work_lat = k.work_lon = None
     await db.commit()
     return {"ok": True}
