@@ -1638,12 +1638,14 @@ function updateKandasStats() {
     })
     .join('<br>');
 
+  const totalCount = kandasData.length;
+  const totalLine = `<span style="white-space:nowrap;color:#374151"><b>Всего:</b> ${totalCount}</span><br>`;
   const unknownLine = unknownCount > 0
-    ? `<span style="white-space:nowrap;color:#ef4444"><b>Неизвестный адрес:</b> ${unknownCount}</span><br>`
+    ? `<span style="white-space:nowrap;color:#ef4444"><b>Республика Казахстан:</b> ${unknownCount}</span><br>`
     : '';
 
   const el = document.getElementById('st-kandas-counts');
-  if (el) el.innerHTML = (unknownLine + lines) || '<span style="color:#94a3b8">Нет данных</span>';
+  if (el) el.innerHTML = (totalLine + unknownLine + lines) || '<span style="color:#94a3b8">Нет данных</span>';
 }
 
 // Единый маппинг меток и порядок отображения полей extra для кандасов
