@@ -1,11 +1,12 @@
 """API для реестра кандасов."""
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import undefer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, get_current_user
@@ -38,6 +39,7 @@ class KandasOut(BaseModel):
     edited_at:   datetime | None
     work_lat:    float | None
     work_lon:    float | None
+    has_photo:   bool = False
 
     class Config:
         from_attributes = True
@@ -63,7 +65,15 @@ async def list_kandas(
 ):
     """Список всех кандасов (только для ролей kandas)."""
     result = await db.execute(select(Kandas).order_by(Kandas.id))
-    return result.scalars().all()
+    kandas_list = result.scalars().all()
+
+    photo_result = await db.execute(select(Kandas.id).where(Kandas.photo != None))
+    photo_ids = {row[0] for row in photo_result}
+
+    return [
+        KandasOut.model_validate(k).model_copy(update={"has_photo": k.id in photo_ids})
+        for k in kandas_list
+    ]
 
 
 @router.get("/{kandas_id}", response_model=KandasOut)
@@ -75,7 +85,13 @@ async def get_kandas(
     k = await db.get(Kandas, kandas_id)
     if not k:
         raise HTTPException(404, "Not found")
-    return k
+
+    photo_result = await db.execute(
+        select(Kandas.id).where(Kandas.id == kandas_id, Kandas.photo != None)
+    )
+    has_photo = photo_result.scalar_one_or_none() is not None
+
+    return KandasOut.model_validate(k).model_copy(update={"has_photo": has_photo})
 
 
 @router.put("/{kandas_id}/coords")
@@ -141,6 +157,57 @@ async def set_work_coords(
     k.work_lon = body.lon
     await db.commit()
     return {"ok": True, "work_lat": k.work_lat, "work_lon": k.work_lon}
+
+
+@router.get("/{kandas_id}/photo")
+async def get_photo(
+    kandas_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_kandas_role),
+):
+    """Получить фото кандаса."""
+    result = await db.execute(
+        select(Kandas).where(Kandas.id == kandas_id).options(undefer(Kandas.photo))
+    )
+    k = result.scalar_one_or_none()
+    if not k or not k.photo:
+        raise HTTPException(404, "No photo")
+    return Response(content=k.photo, media_type="image/jpeg")
+
+
+@router.post("/{kandas_id}/photo")
+async def upload_photo(
+    kandas_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_kandas_role),
+):
+    """Загрузить фото кандаса (только admin_kandas)."""
+    if user.role != UserRole.admin_kandas:
+        raise HTTPException(403, "Only admin_kandas can upload photos")
+    k = await db.get(Kandas, kandas_id)
+    if not k:
+        raise HTTPException(404, "Not found")
+    k.photo = await file.read()
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{kandas_id}/photo")
+async def delete_photo(
+    kandas_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_kandas_role),
+):
+    """Удалить фото кандаса (только admin_kandas)."""
+    if user.role != UserRole.admin_kandas:
+        raise HTTPException(403, "Only admin_kandas can delete photos")
+    k = await db.get(Kandas, kandas_id)
+    if not k:
+        raise HTTPException(404, "Not found")
+    k.photo = None
+    await db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{kandas_id}/work_coords")

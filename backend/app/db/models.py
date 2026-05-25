@@ -12,7 +12,7 @@ from datetime import datetime
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     BigInteger, Boolean, DateTime, Float, ForeignKey,
-    Integer, SmallInteger, String, Text, UniqueConstraint,
+    Integer, LargeBinary, SmallInteger, String, Text, UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -199,9 +199,10 @@ class Kandas(Base):
     coord_source: Mapped[str | None]   = mapped_column(String(16), nullable=True, default="none")
     edited_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Координаты работы (задаются вручную)
-    work_lat:     Mapped[float | None] = mapped_column(Float,    nullable=True)
-    work_lon:     Mapped[float | None] = mapped_column(Float,    nullable=True)
-    created_at:   Mapped[datetime]        = mapped_column(DateTime, server_default=func.now())
+    work_lat:     Mapped[float | None] = mapped_column(Float,       nullable=True)
+    work_lon:     Mapped[float | None] = mapped_column(Float,       nullable=True)
+    photo:        Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    created_at:   Mapped[datetime]     = mapped_column(DateTime,    server_default=func.now())
 
 
 # ─── Журнал правок координат ─────────────────────────────────────────────────

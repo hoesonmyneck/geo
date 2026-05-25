@@ -1608,6 +1608,9 @@ async function loadKandasLayer() {
 
 function updateKandasStats() {
   if (!kandasData) return;
+  // Кандасы без координат
+  const unknownCount = kandasData.filter(k => k.lat == null || k.lon == null).length;
+
   // Все регионы из дропдауна
   const allRegions = Array.from(
     document.querySelectorAll('#goto-region option[value]:not([value=""])')
@@ -1634,8 +1637,13 @@ function updateKandasStats() {
       return `<span style="white-space:nowrap;color:${color}"><b>${r}:</b> ${n}</span>`;
     })
     .join('<br>');
+
+  const unknownLine = unknownCount > 0
+    ? `<span style="white-space:nowrap;color:#ef4444"><b>Неизвестный адрес:</b> ${unknownCount}</span><br>`
+    : '';
+
   const el = document.getElementById('st-kandas-counts');
-  if (el) el.innerHTML = lines || '<span style="color:#94a3b8">Нет данных</span>';
+  if (el) el.innerHTML = (unknownLine + lines) || '<span style="color:#94a3b8">Нет данных</span>';
 }
 
 // Единый маппинг меток и порядок отображения полей extra для кандасов
@@ -1720,14 +1728,19 @@ function buildKandasPopup(k) {
   const loc  = [k.oblast, k.raion, k.city].filter(Boolean).join(', ');
   return `
     <div style="font-size:13px">
-      <div style="font-weight:700;color:#7c3aed;margin-bottom:4px">${k.fio}</div>
-      ${k.iin ? `<div style="font-size:13px;color:#64748b">ИИН: ${k.iin}</div>` : ''}
-      <div style="font-size:13px;color:#64748b">
-        ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:6px">
+        ${k.has_photo ? `<img src="/api/kandas/${k.id}/photo" style="width:56px;height:70px;object-fit:cover;border-radius:4px;flex-shrink:0;border:1px solid #e2e8f0">` : ''}
+        <div>
+          <div style="font-weight:700;color:#7c3aed;margin-bottom:4px">${k.fio}</div>
+          ${k.iin ? `<div style="color:#64748b">ИИН: ${k.iin}</div>` : ''}
+          <div style="color:#64748b">
+            ${k.dob ? `Дата рождения: ${k.dob}` : ''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender || ''} · ${k.citizenship || ''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
+          </div>
+        </div>
       </div>
-      ${loc  ? `<div style="margin-top:4px;font-size:13px">${loc}</div>` : ''}
-      ${addr ? `<div style="font-size:13px">${addr}</div>` : ''}
-      ${k.phone ? `<div style="font-size:13px">Тел: ${k.phone}</div>` : ''}
+      ${loc  ? `<div style="margin-top:4px">${loc}</div>` : ''}
+      ${addr ? `<div>${addr}</div>` : ''}
+      ${k.phone ? `<div>Тел: ${k.phone}</div>` : ''}
       ${_kandasExtraRows(k.extra, true)}
     </div>`;
 }
@@ -1769,6 +1782,7 @@ function renderKandasList() {
     container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
     return;
   }
+  const isAdminKandas = currentUser && currentUser.role === 'admin_kandas';
   container.innerHTML = kandasData.map(k => {
     const addr = [k.oblast, k.raion, k.city, k.street, k.house, k.apt ? `кв.${k.apt}` : '']
       .filter(Boolean).join(', ');
@@ -1779,7 +1793,9 @@ function renderKandasList() {
 
     return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#faf5ff">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div>
+        <div style="display:flex;gap:10px;align-items:flex-start;flex:1;min-width:0">
+          ${k.has_photo ? `<img src="/api/kandas/${k.id}/photo" style="width:72px;height:90px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid #e2e8f0">` : ''}
+          <div style="min-width:0">
           <div style="font-weight:700;color:#7c3aed;font-size:14px">${k.fio}</div>
           <div style="font-size:11px;color:#64748b">
             ИИН: ${k.iin||'—'} · ${k.dob||''}${k.age != null ? ` (${k.age} лет)` : ''} · ${k.gender||''} · ${k.citizenship||''}${k.extra?.nationality ? ` · ${k.extra.nationality}` : ''}
@@ -1787,6 +1803,7 @@ function renderKandasList() {
           ${addr ? `<div style="font-size:12px;margin-top:2px">${addr}</div>` : ''}
           ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
           ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
+          </div>
         </div>
         <div style="min-width:170px;text-align:right">
           <div style="font-size:11px;color:#64748b;margin-bottom:2px">
@@ -1815,6 +1832,15 @@ function renderKandasList() {
           ${k.work_lat!=null ? `
             <button class="action-btn" style="font-size:11px;padding:3px 7px;margin-top:2px;color:#ef4444;border-color:#fecaca"
               onclick="clearWorkCoord(${k.id})">Сбросить работу</button>
+          ` : ''}
+          ${isAdminKandas ? `
+            <hr style="margin:6px 0;border:none;border-top:1px solid #e2e8f0">
+            <button class="action-btn" style="font-size:11px;padding:3px 7px"
+              onclick="uploadKandasPhoto(${k.id})">${k.has_photo ? 'Заменить фото' : 'Загрузить фото'}</button>
+            ${k.has_photo ? `
+              <button class="action-btn" style="font-size:11px;padding:3px 7px;margin-top:2px;color:#ef4444;border-color:#fecaca"
+                onclick="deleteKandasPhoto(${k.id})">Удалить фото</button>
+            ` : ''}
           ` : ''}
         </div>
       </div>
@@ -2282,6 +2308,42 @@ async function pollImport(id, st) {
     const pct = s.total ? Math.round(s.progress/s.total*100) : 0;
     st.textContent = `${s.status} — ${s.progress}/${s.total} (${pct}%)`;
     if (s.status === 'done' || s.status === 'error') { loadPlaces(); break; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Фото кандасов
+// ═══════════════════════════════════════════════════════
+function uploadKandasPhoto(id) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/kandas/${id}/photo`, { method: 'POST', body: fd });
+    if (res.ok) {
+      const idx = kandasData.findIndex(k => k.id === id);
+      if (idx >= 0) kandasData[idx].has_photo = true;
+      renderKandasList();
+    } else {
+      alert('Ошибка загрузки фото');
+    }
+  };
+  input.click();
+}
+
+async function deleteKandasPhoto(id) {
+  if (!confirm('Удалить фото кандаса?')) return;
+  const res = await fetch(`/api/kandas/${id}/photo`, { method: 'DELETE' });
+  if (res.ok) {
+    const idx = kandasData.findIndex(k => k.id === id);
+    if (idx >= 0) kandasData[idx].has_photo = false;
+    renderKandasList();
+  } else {
+    alert('Ошибка удаления фото');
   }
 }
 
