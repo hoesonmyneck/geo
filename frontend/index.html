@@ -553,6 +553,18 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
           <input id="nu-pass" type="password" placeholder="••••••" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">ИИН (для 2FA через ЭЦП)</label>
+          <input id="nu-iin" type="text" inputmode="numeric" maxlength="12" placeholder="12 цифр (необязательно)"
+            style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:monospace"/>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">ФИО</label>
+          <input id="nu-fio" type="text" placeholder="Фамилия Имя Отчество"
+            style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
         <div>
           <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Роль</label>
@@ -565,6 +577,9 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
           </select>
         </div>
         <button onclick="createUser()" style="white-space:nowrap;padding:7px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Создать</button>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:#94a3b8">
+        Если указать ИИН — при входе будет требоваться двухфакторная авторизация (пароль + ЭЦП с тем же ИИН).
       </div>
       <div id="nu-status" style="margin-top:8px;font-size:12px;min-height:16px"></div>
     </div>
@@ -650,22 +665,150 @@ let listTimer    = null;
 async function doLogin() {
   const login = document.getElementById('auth-login').value.trim();
   const pass  = document.getElementById('auth-pass').value;
-  document.getElementById('auth-error').textContent = '';
+  _setAuthMsg('', '#94a3b8');
   try {
     const r = await fetch(`${API}/api/auth/login`, {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({login, password: pass}),
     });
-    if (!r.ok) { document.getElementById('auth-error').textContent = 'Неверный логин или пароль'; return; }
-    currentUser = await r.json();
+    if (!r.ok) {
+      _setAuthMsg('Неверный логин или пароль', '#f87171');
+      return;
+    }
+    const data = await r.json();
+    if (data.requires_2fa) {
+      // Второй фактор — подпись через ЭЦП
+      await runEdsSecondFactor(data.challenge);
+      return;
+    }
+    // Без 2FA — сразу заходим
+    currentUser = data.user;
     startApp();
   } catch(e) {
-    document.getElementById('auth-error').textContent = 'Ошибка сети: ' + e.message;
+    _setAuthMsg('Ошибка сети: ' + e.message, '#f87171');
   }
 }
 document.getElementById('auth-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
 document.getElementById('auth-login').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+// ═══════════════════════════════════════════════════════
+//  ЭЦП РК (NCALayer) — второй фактор для авторизации
+// ═══════════════════════════════════════════════════════
+const NCALAYER_URL = 'wss://127.0.0.1:13579/';
+
+function _setAuthMsg(text, color) {
+  const el = document.getElementById('auth-error');
+  el.style.color = color || '#94a3b8';
+  el.textContent = text;
+}
+
+async function runEdsSecondFactor(challenge) {
+  // 2. Подключаемся к NCALayer
+  _setAuthMsg('Подключение к NCALayer...');
+  let ws;
+  try {
+    ws = new WebSocket(NCALAYER_URL);
+  } catch (e) {
+    _setAuthMsg('NCALayer не запущен или недоступен. Установите и запустите NCALayer с pki.gov.kz', '#f87171');
+    return;
+  }
+
+  let timeoutId = setTimeout(() => {
+    _setAuthMsg('NCALayer не отвечает. Запустите его, перейдите в https://127.0.0.1:13579 и подтвердите сертификат.', '#f87171');
+    try { ws.close(); } catch {}
+  }, 8000);
+
+  ws.onerror = () => {
+    clearTimeout(timeoutId);
+    _setAuthMsg('Не удалось подключиться к NCALayer. Откройте https://127.0.0.1:13579 в браузере и подтвердите сертификат.', '#f87171');
+  };
+
+  let handshakeReceived = false;
+
+  ws.onopen = () => {
+    clearTimeout(timeoutId);
+    _setAuthMsg('Подключено, ожидание NCALayer...');
+    // НЕ отправляем запрос сразу — сначала ждём handshake (NCALayer первым делом шлёт версию)
+  };
+
+  function sendSignRequest() {
+    _setAuthMsg('Подпишите данные в окне NCALayer...');
+    // Старое API NCALayer 1.x: createCAdESFromBase64 с позиционными аргументами
+    // args = [storageType, keyType, base64Data, attached]
+    //   storageType: "PKCS12" | "AKKZIIN" | "KAZTOKEN" | "JACARTA" — выбирается NCALayer'ом
+    //   keyType: "SIGNATURE" — обычная подпись; для авторизации тоже подойдёт
+    //   base64Data: данные для подписи в base64
+    //   attached: true — включить подписанные данные в результат (нужно нам)
+    const base64Data = btoa(unescape(encodeURIComponent(challenge)));
+    const request = {
+      module: 'kz.gov.pki.knca.commonUtils',
+      method: 'createCAdESFromBase64',
+      args: ['PKCS12', 'SIGNATURE', base64Data, true]
+    };
+    console.log('[EDS] sending to NCALayer:', request);
+    ws.send(JSON.stringify(request));
+  }
+
+  ws.onmessage = async (event) => {
+    console.log('[EDS] NCALayer message:', event.data);
+    let response;
+    try {
+      response = JSON.parse(event.data);
+    } catch (e) {
+      _setAuthMsg('Невалидный ответ от NCALayer', '#f87171');
+      try { ws.close(); } catch {}
+      return;
+    }
+
+    // Первое сообщение — handshake вида {"result":{"version":"1.4"}}
+    if (!handshakeReceived && response.result && typeof response.result === 'object' && response.result.version) {
+      console.log('[EDS] NCALayer handshake, version:', response.result.version);
+      handshakeReceived = true;
+      sendSignRequest();
+      return;
+    }
+
+    // Ошибка от NCALayer
+    if (response.code && response.code !== '200') {
+      const msg = response.message || response.code || 'отменено пользователем';
+      _setAuthMsg('Подпись не получена: ' + msg + ' (см. консоль)', '#f87171');
+      try { ws.close(); } catch {}
+      return;
+    }
+
+    // Старое API: подпись лежит в response.result (строка base64)
+    // Новое API: подпись лежит в response.responseObject
+    const signature = response.responseObject ||
+      (typeof response.result === 'string' ? response.result : null);
+    if (!signature) {
+      _setAuthMsg('Подпись не получена (пустой ответ)', '#f87171');
+      try { ws.close(); } catch {}
+      return;
+    }
+    try { ws.close(); } catch {}
+
+    // 3. Отправляем подпись на сервер (второй фактор)
+    _setAuthMsg('Проверка подписи...');
+    try {
+      const loginR = await fetch(`${API}/api/auth/login-2fa`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge, signature }),
+      });
+      if (!loginR.ok) {
+        const err = await loginR.json().catch(() => ({ detail: 'Ошибка ' + loginR.status }));
+        _setAuthMsg(err.detail || 'Ошибка авторизации', '#f87171');
+        return;
+      }
+      currentUser = await loginR.json();
+      startApp();
+    } catch (e) {
+      _setAuthMsg('Ошибка сети: ' + e.message, '#f87171');
+    }
+  };
+}
 
 async function checkAuth() {
   try {
@@ -688,7 +831,8 @@ function isKandasRole() {
 
 function startApp() {
   document.getElementById('auth-overlay').style.display = 'none';
-  document.getElementById('user-label').textContent = currentUser.login + ' ✕';
+  const label = currentUser.fio ? currentUser.fio : currentUser.login;
+  document.getElementById('user-label').textContent = label + ' ✕';
 
   if (isKandasRole()) {
     // ── Режим кандасов: скрыть всё лишнее ──────────────────
@@ -2381,23 +2525,35 @@ async function refreshUsersList() {
     const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb', admin_kandas:'#7c3aed', viewer_kandas:'#9333ea'};
     const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff', admin_kandas:'#f5f3ff', viewer_kandas:'#faf5ff'};
     el.innerHTML = users.map(u => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
-        <div>
-          <span style="font-weight:600">${u.login}</span>
-          <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${u.role}</span>
-          ${!u.is_active ? '<span style="margin-left:6px;font-size:11px;color:#94a3b8">(неактивен)</span>' : ''}
-        </div>
-        <div style="display:flex;gap:6px">
-          ${u.login !== currentUser.login ? `
-            <button onclick="toggleUserActive(${u.id}, ${u.is_active})"
-              style="font-size:11px;padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;cursor:pointer;color:#374151">
-              ${u.is_active ? 'Деактив.' : 'Активир.'}
-            </button>
-            <button onclick="deleteUser(${u.id}, '${u.login}')"
-              style="font-size:11px;padding:3px 8px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#dc2626">
-              Удалить
-            </button>
-          ` : '<span style="font-size:11px;color:#94a3b8">это вы</span>'}
+      <div style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <div style="min-width:0;flex:1">
+            <span style="font-weight:600">${u.login}</span>
+            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${u.role}</span>
+            ${!u.is_active ? '<span style="margin-left:6px;font-size:11px;color:#94a3b8">(неактивен)</span>' : ''}
+            ${u.fio ? `<div style="font-size:11px;color:#475569;margin-top:2px">${u.fio}</div>` : ''}
+            <div style="font-size:11px;color:#64748b;margin-top:2px">
+              ${u.iin
+                ? `<span style="color:#0891b2;font-weight:600">ИИН ${u.iin}</span> <span style="color:#94a3b8">— 2FA через ЭЦП</span>`
+                : '<span style="color:#94a3b8">без ИИН — вход только по паролю</span>'}
+              <button onclick="editUserIin(${u.id})"
+                style="margin-left:6px;font-size:10px;padding:1px 6px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;cursor:pointer;color:#374151">
+                изменить ИИН
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            ${u.login !== currentUser.login ? `
+              <button onclick="toggleUserActive(${u.id}, ${u.is_active})"
+                style="font-size:11px;padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;cursor:pointer;color:#374151">
+                ${u.is_active ? 'Деактив.' : 'Активир.'}
+              </button>
+              <button onclick="deleteUser(${u.id}, '${u.login}')"
+                style="font-size:11px;padding:3px 8px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#dc2626">
+                Удалить
+              </button>
+            ` : '<span style="font-size:11px;color:#94a3b8">это вы</span>'}
+          </div>
         </div>
       </div>
     `).join('');
@@ -2408,27 +2564,57 @@ async function createUser() {
   const login = document.getElementById('nu-login').value.trim();
   const pass  = document.getElementById('nu-pass').value;
   const role  = document.getElementById('nu-role').value;
+  const iin   = document.getElementById('nu-iin').value.trim();
+  const fio   = document.getElementById('nu-fio').value.trim();
   const st    = document.getElementById('nu-status');
 
   if (!login || !pass) { st.style.color = '#dc2626'; st.textContent = 'Заполните логин и пароль'; return; }
+  if (iin && !/^\d{12}$/.test(iin)) {
+    st.style.color = '#dc2626'; st.textContent = 'ИИН должен состоять из 12 цифр';
+    return;
+  }
 
   st.style.color = '#64748b'; st.textContent = 'Создание...';
   try {
     const r = await fetch(`${API}/api/users`, {
       method: 'POST', credentials: 'include',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({login, password: pass, role}),
+      body: JSON.stringify({login, password: pass, role, iin: iin || null, fio: fio || null}),
     });
     if (r.ok) {
       st.style.color = '#166534'; st.textContent = `Пользователь "${login}" создан`;
       document.getElementById('nu-login').value = '';
       document.getElementById('nu-pass').value = '';
+      document.getElementById('nu-iin').value = '';
+      document.getElementById('nu-fio').value = '';
       await refreshUsersList();
     } else {
       const err = await r.json();
       st.style.color = '#dc2626'; st.textContent = err.detail || 'Ошибка';
     }
   } catch { st.style.color = '#dc2626'; st.textContent = 'Ошибка сети'; }
+}
+
+async function editUserIin(id) {
+  const newIin = prompt('Введите новый ИИН (12 цифр) или оставьте пустым чтобы убрать привязку:');
+  if (newIin === null) return;
+  const iin = newIin.trim();
+  if (iin && !/^\d{12}$/.test(iin)) {
+    alert('ИИН должен состоять из 12 цифр');
+    return;
+  }
+  try {
+    const r = await fetch(`${API}/api/users/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({iin: iin || ''}),
+    });
+    if (r.ok) await refreshUsersList();
+    else {
+      const err = await r.json();
+      alert(err.detail || 'Ошибка');
+    }
+  } catch { alert('Ошибка сети'); }
 }
 
 async function deleteUser(id, login) {

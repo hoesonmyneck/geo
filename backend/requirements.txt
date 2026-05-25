@@ -12,6 +12,7 @@ geoalchemy2==0.17.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
+asn1crypto==1.5.1   # парсинг CMS-подписи от NCALayer (ЭЦП РК)
 
 # Data processing (worker)
 openpyxl==3.1.5
