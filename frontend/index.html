@@ -459,6 +459,10 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div id="st-kandas-info" style="display:none;font-size:12px;line-height:1.8">
     <span id="st-kandas-counts"></span>
   </div>
+  <!-- Режим ЦОССУ: учреждения по областям -->
+  <div id="st-cossu-info" style="display:none;font-size:12px;line-height:1.8">
+    <span id="st-cossu-counts"></span>
+  </div>
 </div>
 
 <!-- Панель статистики выделенной области -->
@@ -922,8 +926,10 @@ function startApp() {
     document.querySelector('[onclick="openKandasModal()"]').style.display = 'none';
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
-    // Прячем стат-панель (для ЦОССУ пока нет агрегатов)
-    document.getElementById('stats-panel').style.display = 'none';
+    // Показываем стат-панель с ЦОССУ-блоком
+    document.getElementById('stats-panel').style.display = 'block';
+    document.getElementById('st-cossu-info').style.display = 'block';
+    document.getElementById('st-normal-info').style.display = 'none';
   } else {
     // ── Обычный режим: скрыть кнопки Кандасы / ЦОССУ и линзу ──
     document.getElementById('stats-panel').style.display = 'block';
@@ -973,8 +979,8 @@ function initMap() {
     // Кандас-режим: не загружаем обычные данные, только маркеры кандасов
     loadKandasLayer();
   } else if (isCossuRole()) {
-    // ЦОССУ-режим: пока маркеры не показываем (координат нет), только модалка по кнопке
-    // Позже можно добавить loadCossuLayer() аналогично кандасам.
+    // ЦОССУ-режим: данные загружаем для статистики, маркеры пока не показываем
+    loadCossuData();
   } else {
     loadPlaces();
   }
@@ -1824,6 +1830,30 @@ async function loadKandasLayer() {
   if (isKandasRole()) updateKandasStats();
 }
 
+// Аббревиатуры из дропдауна → подстрока для поиска в полном названии региона
+const REGION_ABBR_MAP = {
+  'СКО': 'северо-казахстанская',
+  'ВКО': 'восточно-казахстанская',
+  'ЗКО': 'западно-казахстанская',
+};
+
+// Сопоставляет произвольное название региона со значением из дропдауна #goto-region
+function _matchRegionToDropdown(region, allRegions) {
+  if (!region) return null;
+  const regionLower = region.toLowerCase();
+  return allRegions.find(r => {
+    const rLower = r.toLowerCase();
+    if (rLower === regionLower) return true;
+    // Аббревиатуры СКО/ВКО/ЗКО
+    if (REGION_ABBR_MAP[r] && regionLower.includes(REGION_ABBR_MAP[r])) return true;
+    // Убираем " обл." и сравниваем по вхождению
+    const rStripped = rLower.replace(' обл.', '');
+    if (regionLower.includes(rStripped)) return true;
+    if (rStripped.includes(regionLower)) return true;
+    return false;
+  }) || region;
+}
+
 function updateKandasStats() {
   if (!kandasData) return;
   // Кандасы без координат
@@ -1837,14 +1867,8 @@ function updateKandasStats() {
   const counts = {};
   for (const r of allRegions) counts[r] = 0;
   for (const k of kandasData) {
-    const region = k.oblast;
-    if (!region) continue;
-    // Найти совпадение в allRegions (нечёткое — ищем по вхождению)
-    const matched = allRegions.find(r =>
-      r.toLowerCase() === region.toLowerCase() ||
-      region.toLowerCase().includes(r.toLowerCase().replace(' обл.', '')) ||
-      r.toLowerCase().replace(' обл.', '').includes(region.toLowerCase())
-    ) || region;
+    const matched = _matchRegionToDropdown(k.oblast, allRegions);
+    if (!matched) continue;
     counts[matched] = (counts[matched] || 0) + 1;
   }
   // Сортировка: сначала с кандасами (> 0), потом нулевые
@@ -2234,6 +2258,50 @@ function isCossuRole() {
   return currentUser && (currentUser.role === 'admin_cossu' || currentUser.role === 'viewer_cossu');
 }
 
+async function loadCossuData() {
+  // Загружает учреждения ЦОССУ в cossuData и обновляет правую статистику.
+  // Вызывается один раз при входе под cossu-ролью + после установки координат.
+  try {
+    const r = await fetch('/api/cossu', { credentials: 'include' });
+    if (!r.ok) return;
+    cossuData = await r.json();
+    if (isCossuRole()) updateCossuStats();
+  } catch (e) {
+    console.error('loadCossuData:', e);
+  }
+}
+
+function updateCossuStats() {
+  if (!cossuData) return;
+  const unknownCount = cossuData.filter(c => c.lat == null || c.lon == null).length;
+
+  const allRegions = Array.from(
+    document.querySelectorAll('#goto-region option[value]:not([value=""])')
+  ).map(o => o.value);
+  const counts = {};
+  for (const r of allRegions) counts[r] = 0;
+  for (const c of cossuData) {
+    const matched = _matchRegionToDropdown(c.region, allRegions);
+    if (!matched) continue;
+    counts[matched] = (counts[matched] || 0) + 1;
+  }
+  const lines = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([r, n]) => {
+      const color = n > 0 ? '#374151' : '#94a3b8';
+      return `<span style="white-space:nowrap;color:${color}"><b>${r}:</b> ${n}</span>`;
+    })
+    .join('<br>');
+
+  const totalLine = `<span style="white-space:nowrap;color:#374151"><b>Всего учреждений:</b> ${cossuData.length}</span><br>`;
+  const unknownLine = unknownCount > 0
+    ? `<span style="white-space:nowrap;color:#ef4444"><b>Без координат:</b> ${unknownCount}</span><br>`
+    : '';
+
+  const el = document.getElementById('st-cossu-counts');
+  if (el) el.innerHTML = (totalLine + unknownLine + lines) || '<span style="color:#94a3b8">Нет данных</span>';
+}
+
 async function openCossuModal() {
   document.getElementById('cossu-modal').style.display = 'flex';
   try {
@@ -2244,6 +2312,7 @@ async function openCossuModal() {
       return;
     }
     cossuData = await r.json();
+    if (isCossuRole()) updateCossuStats();
     renderCossuList();
   } catch (e) {
     document.getElementById('cossu-list').innerHTML =
@@ -2409,6 +2478,7 @@ function _updateCossuLocalCoords(orgBin, lat, lon) {
   inst.lat = lat;
   inst.lon = lon;
   for (const b of inst.branches) { b.lat = lat; b.lon = lon; }
+  if (isCossuRole()) updateCossuStats();
 }
 
 function startSetCossuCoord(orgBin) {
