@@ -327,6 +327,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
     <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
+    <button class="action-btn" onclick="openCossuModal()" style="background:#0891b2;color:#fff;border-color:#0891b2">Список ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <label class="cat-item" style="margin-top:6px">
       <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
@@ -574,6 +575,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
             <option value="admin">admin — полный доступ</option>
             <option value="viewer_kandas">viewer_kandas — только реестр кандасов</option>
             <option value="admin_kandas">admin_kandas — кандасы + редактирование</option>
+            <option value="viewer_cossu">viewer_cossu — только реестр ЦОССУ</option>
+            <option value="admin_cossu">admin_cossu — ЦОССУ + редактирование</option>
           </select>
         </div>
         <button onclick="createUser()" style="white-space:nowrap;padding:7px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Создать</button>
@@ -604,6 +607,23 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
         style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
     </div>
     <div id="kandas-list" style="display:flex;flex-direction:column;gap:12px;padding:16px 20px 20px"></div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: ЦОССУ ── -->
+<div class="modal-overlay" id="cossu-modal">
+  <div class="coord-box" style="width:900px;max-width:96vw;max-height:90vh;padding:0;display:flex;flex-direction:column">
+    <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="color:#0891b2;margin:0">Реестр ЦОССУ</h3>
+      <button onclick="closeCossuModal()" title="Закрыть"
+        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+    </div>
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc">
+      <input id="cossu-search" type="text" placeholder="Поиск по названию / БИН / адресу..."
+        oninput="renderCossuList()"
+        style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+    </div>
+    <div id="cossu-list" style="display:flex;flex-direction:column;gap:14px;padding:16px 20px 20px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -873,30 +893,42 @@ function startApp() {
 
   if (isKandasRole()) {
     // ── Режим кандасов: скрыть всё лишнее ──────────────────
-    // Скрыть секции сайдбара кроме Инструментов
     ['cats', 'dists', 'conf', 'clust'].forEach(id => {
       const head = document.querySelector(`.s-head[onclick*="'${id}'"]`);
       const body = document.getElementById(id + '-body');
       if (head) head.style.display = 'none';
       if (body) body.style.display = 'none';
     });
-    // Скрыть кнопки не нужные кандасам
     document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
     document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
-    // Скрыть "Линза кандасов" — для кандас-аккаунта линза всегда включена
+    document.querySelector('[onclick="openCossuModal()"]').style.display = 'none';
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
-    // Показать кнопку границ (нужна кандасам)
     document.getElementById('btn-districts').style.display = '';
-    // Показать кандас-панель вместо обычной
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-kandas-info').style.display = 'block';
     document.getElementById('st-normal-info').style.display = 'none';
+  } else if (isCossuRole()) {
+    // ── Режим ЦОССУ: тоже скрываем всё кроме списка ЦОССУ и границ ──
+    ['cats', 'dists', 'conf', 'clust'].forEach(id => {
+      const head = document.querySelector(`.s-head[onclick*="'${id}'"]`);
+      const body = document.getElementById(id + '-body');
+      if (head) head.style.display = 'none';
+      if (body) body.style.display = 'none';
+    });
+    document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
+    document.getElementById('draw-tools-section').style.display = 'none';
+    document.querySelector('[onclick="openListModal()"]').style.display = 'none';
+    document.querySelector('[onclick="openKandasModal()"]').style.display = 'none';
+    document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
+    document.getElementById('btn-districts').style.display = '';
+    // Прячем стат-панель (для ЦОССУ пока нет агрегатов)
+    document.getElementById('stats-panel').style.display = 'none';
   } else {
-    // ── Обычный режим: скрыть кнопку Кандасы и линзу ────────
+    // ── Обычный режим: скрыть кнопки Кандасы / ЦОССУ и линзу ──
     document.getElementById('stats-panel').style.display = 'block';
-    // Скрыть кандас-кнопки для обычных пользователей
     document.querySelectorAll('[onclick="openKandasModal()"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('[onclick="openCossuModal()"]').forEach(el => el.style.display = 'none');
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     if (currentUser.role === 'admin') {
       document.getElementById('admin-tools').style.display = 'block';
@@ -940,6 +972,9 @@ function initMap() {
   if (isKandasRole()) {
     // Кандас-режим: не загружаем обычные данные, только маркеры кандасов
     loadKandasLayer();
+  } else if (isCossuRole()) {
+    // ЦОССУ-режим: пока маркеры не показываем (координат нет), только модалка по кнопке
+    // Позже можно добавить loadCossuLayer() аналогично кандасам.
   } else {
     loadPlaces();
   }
@@ -2188,6 +2223,246 @@ async function clearWorkCoord(id) {
   renderKandasList();
 }
 
+// ═══════════════════════════════════════════════════════
+//  ЦОССУ — реестр центров с вкладками отделений
+// ═══════════════════════════════════════════════════════
+let cossuData = [];      // массив учреждений (каждое содержит branches[])
+// activeTab[org_bin] = индекс активной вкладки (-1 = "Общее")
+const cossuActiveTab = {};
+
+function isCossuRole() {
+  return currentUser && (currentUser.role === 'admin_cossu' || currentUser.role === 'viewer_cossu');
+}
+
+async function openCossuModal() {
+  document.getElementById('cossu-modal').style.display = 'flex';
+  try {
+    const r = await fetch('/api/cossu', { credentials: 'include' });
+    if (!r.ok) {
+      document.getElementById('cossu-list').innerHTML =
+        '<div style="color:#ef4444;text-align:center">Нет доступа или ошибка загрузки</div>';
+      return;
+    }
+    cossuData = await r.json();
+    renderCossuList();
+  } catch (e) {
+    document.getElementById('cossu-list').innerHTML =
+      `<div style="color:#ef4444;text-align:center">Ошибка: ${e.message}</div>`;
+  }
+}
+
+function closeCossuModal() {
+  document.getElementById('cossu-modal').style.display = 'none';
+}
+
+function _escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderCossuList() {
+  const container = document.getElementById('cossu-list');
+  if (!cossuData.length) {
+    container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
+    return;
+  }
+  const q = (document.getElementById('cossu-search')?.value || '').trim().toLowerCase();
+  const filtered = q
+    ? cossuData.filter(inst => {
+        const s = `${inst.org_name || ''} ${inst.org_bin} ${inst.fulladdress || ''} ${inst.region || ''}`.toLowerCase();
+        return s.includes(q);
+      })
+    : cossuData;
+  if (!filtered.length) {
+    container.innerHTML = '<div style="color:#94a3b8;text-align:center">Ничего не найдено</div>';
+    return;
+  }
+  container.innerHTML = filtered.map(renderCossuCard).join('');
+}
+
+function renderCossuCard(inst) {
+  const tabIdx = cossuActiveTab[inst.org_bin] ?? -1;       // -1 = общее
+  const branches = inst.branches || [];
+  const multi = branches.length > 1;
+
+  // Шапка с табами (если несколько отделений)
+  const tabsHtml = multi
+    ? `<div style="display:flex;gap:2px;overflow-x:auto;background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:0 4px">
+         ${[{i:-1, label:`Общее (${branches.length})`}].concat(
+            branches.map((b,i) => ({i, label: `Отд. ${i+1}`}))
+          ).map(t => {
+            const active = t.i === tabIdx;
+            return `<button onclick="setCossuTab('${inst.org_bin}', ${t.i})" title="${_escapeHtml(t.i === -1 ? 'Сводно по учреждению' : branches[t.i].otd_name || '')}"
+              style="white-space:nowrap;padding:7px 12px;border:none;background:${active?'#fff':'transparent'};color:${active?'#0891b2':'#475569'};font-size:12px;font-weight:${active?'700':'500'};border-bottom:2px solid ${active?'#0891b2':'transparent'};cursor:pointer">
+              ${_escapeHtml(t.label)}
+            </button>`;
+          }).join('')}
+       </div>`
+    : '';
+
+  // Контент: общее или конкретное отделение
+  const contentHtml = tabIdx === -1
+    ? _renderCossuSummary(inst)
+    : _renderCossuBranch(inst, branches[tabIdx]);
+
+  return `<div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff;flex-shrink:0">
+    <div style="padding:12px 14px;background:linear-gradient(135deg,#0891b2 0%,#0e7490 100%);color:#fff">
+      <div style="font-weight:700;font-size:14px;line-height:1.3">${_escapeHtml(inst.org_name || '—')}</div>
+      <div style="font-size:11px;opacity:.9;margin-top:3px">
+        БИН: ${_escapeHtml(inst.org_bin)} · ${_escapeHtml(inst.sobst || '')} · ${branches.length} отделение(й)
+      </div>
+      ${inst.fulladdress ? `<div style="font-size:11px;opacity:.85;margin-top:2px">${_escapeHtml(inst.fulladdress)}</div>` : ''}
+    </div>
+    ${tabsHtml}
+    <div style="padding:12px 14px">${contentHtml}</div>
+  </div>`;
+}
+
+function _renderCossuSummary(inst) {
+  const isAdminCossu = currentUser && currentUser.role === 'admin_cossu';
+  const hasCoords = inst.lat != null && inst.lon != null;
+  const stats = [
+    ['Койко-мест (факт)', inst.total_fakt_koika_mesto],
+    ['Получателей услуг', inst.total_residents_count],
+    ['В очереди',         inst.total_queue_count],
+  ];
+  const types    = inst.types    || [];
+  const subtypes = inst.subtypes || [];
+  return `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+      ${stats.map(([k,v]) => `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px">
+          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px">${k}</div>
+          <div style="font-size:18px;font-weight:700;color:#0e7490">${v ?? 0}</div>
+        </div>
+      `).join('')}
+    </div>
+    ${types.length ? `
+      <div style="margin-bottom:6px">
+        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Тип</span><br>
+        ${types.map(t => `<span style="display:inline-block;background:#cffafe;color:#155e75;padding:2px 8px;border-radius:10px;font-size:12px;margin-right:4px;margin-top:3px">${_escapeHtml(t)}</span>`).join('')}
+      </div>
+    ` : ''}
+    ${subtypes.length ? `
+      <div style="margin-bottom:10px">
+        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Подтипы</span>
+        <ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:#374151;line-height:1.5">
+          ${subtypes.map(s => `<li>${_escapeHtml(s)}</li>`).join('')}
+        </ul>
+      </div>
+    ` : ''}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Координаты учреждения:</span>
+      <span style="font-family:monospace;font-size:12px;color:${hasCoords?'#059669':'#94a3b8'}">
+        ${hasCoords ? `${inst.lat.toFixed(5)}, ${inst.lon.toFixed(5)}` : 'не заданы'}
+      </span>
+      ${isAdminCossu ? `
+        <button class="action-btn" style="font-size:11px;padding:3px 9px;margin:0"
+          onclick="startSetCossuCoord('${inst.org_bin}')">Указать на карте</button>
+        ${hasCoords ? `
+          <button class="action-btn" style="font-size:11px;padding:3px 9px;margin:0;color:#ef4444;border-color:#fecaca"
+            onclick="clearCossuCoord('${inst.org_bin}')">Сбросить</button>
+        ` : ''}
+      ` : ''}
+    </div>
+  `;
+}
+
+function _renderCossuBranch(inst, b) {
+  if (!b) return '<div style="color:#94a3b8">Нет данных</div>';
+  const rows = [
+    ['Название отделения', b.otd_name],
+    ['Тип',                b.otd_typ],
+    ['Подтип',             b.otd_podtyp],
+    ['Адрес',              b.additional_address],
+    ['Койко-мест (факт)',  b.fakt_koika_mesto],
+    ['Получателей услуг',  b.residents_count],
+    ['В очереди',          b.queue_count],
+  ];
+  return `
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      ${rows.map(([k,v]) => `
+        <tr>
+          <td style="padding:4px 8px 4px 0;color:#64748b;vertical-align:top;white-space:nowrap">${k}</td>
+          <td style="padding:4px 0;color:#0f172a;font-weight:500">${v != null && v !== '' ? _escapeHtml(v) : '<span style="color:#cbd5e1">—</span>'}</td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
+function setCossuTab(orgBin, idx) {
+  cossuActiveTab[orgBin] = idx;
+  renderCossuList();
+}
+
+// ── Установка координат ЦОССУ (admin_cossu) ─────────────────────────────────
+// Координаты задаются на уровне учреждения (org_bin), а не отдельного отделения.
+// Все отделения одного БИН получают одинаковые координаты.
+let _cossuSetMode = null;   // org_bin учреждения для установки координат
+
+function _updateCossuLocalCoords(orgBin, lat, lon) {
+  const inst = cossuData.find(i => i.org_bin === orgBin);
+  if (!inst) return;
+  inst.lat = lat;
+  inst.lon = lon;
+  for (const b of inst.branches) { b.lat = lat; b.lon = lon; }
+}
+
+function startSetCossuCoord(orgBin) {
+  closeCossuModal();
+  _cossuSetMode = orgBin;
+  map.getContainer().style.cursor = 'crosshair';
+  const hint = document.createElement('div');
+  hint.id = 'cossu-hint';
+  hint.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0891b2;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  hint.textContent = 'Кликните на карту чтобы задать координату учреждения. Esc — отмена.';
+  document.body.appendChild(hint);
+
+  const onMapClick = async (e) => {
+    map.off('click', onMapClick);
+    map.getContainer().style.cursor = '';
+    document.getElementById('cossu-hint')?.remove();
+    const res = await fetch(`/api/cossu/by-bin/${encodeURIComponent(_cossuSetMode)}/coords`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: e.latlng.lat, lon: e.latlng.lng })
+    });
+    if (res.ok) {
+      _updateCossuLocalCoords(_cossuSetMode, e.latlng.lat, e.latlng.lng);
+      _cossuSetMode = null;
+      openCossuModal();
+    } else {
+      alert('Ошибка сохранения координат');
+    }
+  };
+  map.on('click', onMapClick);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _cossuSetMode !== null) {
+      map.off('click', onMapClick);
+      map.getContainer().style.cursor = '';
+      document.getElementById('cossu-hint')?.remove();
+      _cossuSetMode = null;
+      openCossuModal();
+    }
+  }, { once: true });
+}
+
+async function clearCossuCoord(orgBin) {
+  if (!confirm('Сбросить координаты этого учреждения?')) return;
+  const res = await fetch(`/api/cossu/by-bin/${encodeURIComponent(orgBin)}/coords`, {
+    method: 'DELETE', credentials: 'include'
+  });
+  if (res.ok) {
+    _updateCossuLocalCoords(orgBin, null, null);
+    renderCossuList();
+  } else {
+    alert('Ошибка сброса координат');
+  }
+}
+
 function applyDistrict() {
   const sel = document.querySelector('input[name="dist"]:checked');
   activeDistrict = sel ? sel.value : 'all';
@@ -2577,8 +2852,8 @@ async function refreshUsersList() {
     const users = await r.json();
     if (!users.length) { el.innerHTML = '<span style="color:#94a3b8">Нет пользователей</span>'; return; }
 
-    const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb', admin_kandas:'#7c3aed', viewer_kandas:'#9333ea'};
-    const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff', admin_kandas:'#f5f3ff', viewer_kandas:'#faf5ff'};
+    const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb', admin_kandas:'#7c3aed', viewer_kandas:'#9333ea', admin_cossu:'#0891b2', viewer_cossu:'#0e7490'};
+    const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff', admin_kandas:'#f5f3ff', viewer_kandas:'#faf5ff', admin_cossu:'#ecfeff', viewer_cossu:'#cffafe'};
     el.innerHTML = users.map(u => `
       <div style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">

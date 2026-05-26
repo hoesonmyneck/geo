@@ -31,8 +31,11 @@ class UserRole(str, enum.Enum):
     admin         = "admin"
     admin_kandas  = "admin_kandas"   # видит только кандасов, может редактировать
     viewer_kandas = "viewer_kandas"  # видит только кандасов, только чтение
+    admin_cossu   = "admin_cossu"    # видит только ЦОССУ, может редактировать
+    viewer_cossu  = "viewer_cossu"   # видит только ЦОССУ, только чтение
 
 KANDAS_ROLES = {UserRole.admin_kandas, UserRole.viewer_kandas}
+COSSU_ROLES  = {UserRole.admin_cossu,  UserRole.viewer_cossu}
 
 
 # ─── Тип географического объекта ─────────────────────────────────────────────
@@ -205,6 +208,40 @@ class Kandas(Base):
     work_lon:     Mapped[float | None] = mapped_column(Float,       nullable=True)
     photo:        Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     created_at:   Mapped[datetime]     = mapped_column(DateTime,    server_default=func.now())
+
+
+# ─── ЦОССУ (Центры оказания специальных социальных услуг) ───────────────────
+# Каждая запись = одно отделение. Несколько записей с одинаковым org_bin
+# объединяются на фронте в одно учреждение с вкладками по отделениям.
+
+class Cossu(Base):
+    __tablename__ = "cossu"
+
+    id:                Mapped[int]        = mapped_column(Integer,  primary_key=True, autoincrement=True)
+    branch_id:         Mapped[str | None] = mapped_column(String(32),  nullable=True, index=True)
+    org_bin:           Mapped[str]        = mapped_column(String(32),  nullable=False, index=True)
+    org_name:          Mapped[str | None] = mapped_column(Text,        nullable=True)
+    sobst:             Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    region:            Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    kato_region:       Mapped[str | None] = mapped_column(String(16),  nullable=True)
+    rayon:             Mapped[str | None] = mapped_column(String(128), nullable=True)
+    kato_rayon:        Mapped[str | None] = mapped_column(String(16),  nullable=True)
+    rayon2:            Mapped[str | None] = mapped_column(String(128), nullable=True)
+    kato_rayon2:       Mapped[str | None] = mapped_column(String(16),  nullable=True)
+    additional_address: Mapped[str | None] = mapped_column(Text,       nullable=True)
+    fulladdress:       Mapped[str | None] = mapped_column(Text,        nullable=True)
+    otd_name:          Mapped[str | None] = mapped_column(Text,        nullable=True)
+    otd_typ:           Mapped[str | None] = mapped_column(String(256), nullable=True)
+    otd_podtyp:        Mapped[str | None] = mapped_column(String(512), nullable=True)
+    fakt_koika_mesto:  Mapped[int | None] = mapped_column(Integer,     nullable=True)
+    residents_count:   Mapped[int | None] = mapped_column(Integer,     nullable=True)
+    queue_count:       Mapped[int | None] = mapped_column(Integer,     nullable=True)
+    # Координаты (задаются вручную или геокодингом)
+    lat:               Mapped[float | None] = mapped_column(Float,     nullable=True)
+    lon:               Mapped[float | None] = mapped_column(Float,     nullable=True)
+    coord_source:      Mapped[str | None]   = mapped_column(String(16), nullable=True, default="none")
+    edited_at:         Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at:        Mapped[datetime]     = mapped_column(DateTime,  server_default=func.now())
 
 
 # ─── Журнал правок координат ─────────────────────────────────────────────────
