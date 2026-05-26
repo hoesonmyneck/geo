@@ -1,6 +1,8 @@
 {
-    # Отключить автоматический HTTPS (мы сами рулим через `tls internal`)
-    auto_https off
+    # Отключаем только редиректы HTTP→HTTPS (нам важно сохранить HTTP-доступ
+    # по http://localhost для локалки). При этом cert-management остаётся
+    # активным — `tls internal` сможет генерировать самоподписанные серты.
+    auto_https disable_redirects
 }
 
 # Общий набор обработчиков переиспользуется в HTTP и HTTPS блоках
