@@ -1,9 +1,10 @@
 {
-    # Отключить автоматический HTTPS (для локальной разработки)
+    # Отключить автоматический HTTPS (мы сами рулим через `tls internal`)
     auto_https off
 }
 
-:80 {
+# Общий набор обработчиков переиспользуется в HTTP и HTTPS блоках
+(common) {
     encode gzip
 
     # API проксируется на backend
@@ -11,9 +12,7 @@
         reverse_proxy backend:8000
     }
 
-    # Статические данные из /geo-data.
-    # file_server с precompressed gzip: если браузер принимает gzip и есть .gz файл,
-    # Caddy отдаёт его напрямую без runtime сжатия.
+    # Статические данные (places.json и т.п.)
     handle /data/* {
         uri strip_prefix /data
         root * /geo-data
@@ -29,4 +28,17 @@
         try_files {path} /index.html
         file_server
     }
+}
+
+# HTTP на внутреннем 80 → внешний 4000 (для локального dev: http://localhost)
+:80 {
+    import common
+}
+
+# HTTPS на внутреннем 443 → внешний 4443 (для прода: https://interaction.enbek.kz:4443)
+# tls internal — Caddy генерит самоподписанный сертификат, браузер один раз
+# попросит подтвердить «небезопасное соединение». NCALayer пускает HTTPS-origins.
+:443 {
+    tls internal
+    import common
 }
