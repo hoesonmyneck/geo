@@ -36,9 +36,10 @@
 }
 
 # HTTPS на внутреннем 443 → внешний 4443 (для прода: https://interaction.enbek.kz:4443)
-# tls internal — Caddy генерит самоподписанный сертификат, браузер один раз
-# попросит подтвердить «небезопасное соединение». NCALayer пускает HTTPS-origins.
-:443 {
+# Явно указываем домены — иначе `tls internal` не знает на какое имя выпускать
+# самоподписанный сертификат и TLS-хендшейк падает с ERR_SSL_PROTOCOL_ERROR.
+# localhost — чтобы локально тоже можно было зайти по HTTPS если понадобится.
+interaction.enbek.kz, localhost {
     tls internal
     import common
 }
