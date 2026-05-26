@@ -1873,9 +1873,15 @@ function _renderFamily(members, asTable) {
   return lines;
 }
 
+// Поля, которые рендерятся в отдельных секциях и НЕ должны попадать в общий список extras
+const KANDAS_FIELDS_SEPARATE = new Set(['soc_portrait']);
+
 function _kandasExtraRows(extra, asTable) {
   const base = extra || {};
-  const ordered = [...KANDAS_FIELD_ORDER, ...Object.keys(base).filter(k => !KANDAS_FIELD_ORDER.includes(k))];
+  const ordered = [
+    ...KANDAS_FIELD_ORDER,
+    ...Object.keys(base).filter(k => !KANDAS_FIELD_ORDER.includes(k) && !KANDAS_FIELDS_SEPARATE.has(k))
+  ];
   const parts = [];
 
   for (const k of ordered) {
@@ -1927,6 +1933,12 @@ function buildKandasPopup(k) {
       ${addr ? `<div>${addr}</div>` : ''}
       ${k.phone ? `<div>Тел: ${k.phone}</div>` : ''}
       ${_kandasExtraRows(k.extra, true)}
+      ${k.extra?.soc_portrait ? `
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
+          <div style="font-weight:700;color:#7c3aed;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Анкета</div>
+          <div style="font-size:12px;color:#374151;line-height:1.5;white-space:pre-wrap">${k.extra.soc_portrait}</div>
+        </div>
+      ` : ''}
     </div>`;
 }
 
@@ -1988,6 +2000,12 @@ function renderKandasList() {
           ${addr ? `<div style="font-size:12px;margin-top:2px">${addr}</div>` : ''}
           ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
           ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
+          ${k.extra?.soc_portrait ? `
+            <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
+              <div style="font-weight:700;color:#7c3aed;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Анкета</div>
+              <div style="font-size:12px;color:#374151;line-height:1.5;white-space:pre-wrap">${k.extra.soc_portrait}</div>
+            </div>
+          ` : ''}
           </div>
         </div>
         <div style="min-width:170px;text-align:right">
