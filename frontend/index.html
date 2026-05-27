@@ -2258,14 +2258,64 @@ function isCossuRole() {
   return currentUser && (currentUser.role === 'admin_cossu' || currentUser.role === 'viewer_cossu');
 }
 
+// Слой маркеров ЦОССУ
+let cossuLayer = null;
+
+// Бирюзовая иконка с буквой Ц
+const cossuIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    width:30px;height:30px;border-radius:50%;
+    background:#0891b2;border:3px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:13px;font-weight:700">Ц</div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -16],
+});
+
+function _renderCossuLayer() {
+  if (!map) return;
+  if (cossuLayer) { map.removeLayer(cossuLayer); cossuLayer = null; }
+  if (!cossuData || !cossuData.length) return;
+  cossuLayer = L.layerGroup();
+  for (const inst of cossuData) {
+    if (inst.lat == null || inst.lon == null) continue;
+    const marker = L.marker([inst.lat, inst.lon], { icon: cossuIcon });
+    marker.bindPopup(_cossuMapPopup(inst), { maxWidth: 320 });
+    cossuLayer.addLayer(marker);
+  }
+  map.addLayer(cossuLayer);
+}
+
+function _cossuMapPopup(inst) {
+  const branches = inst.branches || [];
+  const types = (inst.types || []).map(t => `<span style="display:inline-block;background:#cffafe;color:#155e75;padding:1px 6px;border-radius:8px;font-size:11px;margin-right:3px;margin-top:2px">${_escapeHtml(t)}</span>`).join('');
+  return `<div style="font-size:13px;min-width:240px">
+    <div style="font-weight:700;color:#0e7490;line-height:1.3;margin-bottom:4px">${_escapeHtml(inst.org_name || '—')}</div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">БИН: ${_escapeHtml(inst.org_bin)} · ${branches.length} отд.</div>
+    ${inst.fulladdress ? `<div style="font-size:12px;margin-bottom:6px">${_escapeHtml(inst.fulladdress)}</div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <span style="font-size:11px"><b>${inst.total_fakt_koika_mesto || 0}</b> койко-мест</span>
+      <span style="font-size:11px"><b>${inst.total_residents_count || 0}</b> получателей</span>
+      <span style="font-size:11px"><b>${inst.total_queue_count || 0}</b> в очереди</span>
+    </div>
+    ${types ? `<div style="margin-top:4px">${types}</div>` : ''}
+  </div>`;
+}
+
 async function loadCossuData() {
-  // Загружает учреждения ЦОССУ в cossuData и обновляет правую статистику.
+  // Загружает учреждения ЦОССУ в cossuData, обновляет панель статистики и маркеры на карте.
   // Вызывается один раз при входе под cossu-ролью + после установки координат.
   try {
     const r = await fetch('/api/cossu', { credentials: 'include' });
     if (!r.ok) return;
     cossuData = await r.json();
-    if (isCossuRole()) updateCossuStats();
+    if (isCossuRole()) {
+      updateCossuStats();
+      _renderCossuLayer();
+    }
   } catch (e) {
     console.error('loadCossuData:', e);
   }
@@ -2478,7 +2528,10 @@ function _updateCossuLocalCoords(orgBin, lat, lon) {
   inst.lat = lat;
   inst.lon = lon;
   for (const b of inst.branches) { b.lat = lat; b.lon = lon; }
-  if (isCossuRole()) updateCossuStats();
+  if (isCossuRole()) {
+    updateCossuStats();
+    _renderCossuLayer();
+  }
 }
 
 function startSetCossuCoord(orgBin) {
