@@ -2414,8 +2414,9 @@ function _cossuFree(koika, residents) {
 let cossuTypeFilter = new Set();
 // Активный фильтр по очереди: 'none' / 'has' (пусто = все)
 let cossuQueueFilter = new Set();
-// Слой линий до ближайших ЦОССУ без очереди
+// Слой линий до ближайших ЦОССУ без очереди + участники текущих линий (origin + назначения)
 let cossuLinesLayer = null;
+let _cossuLineMembers = new Set();
 // Слой радиусов вокруг выбранной точки + флаг включения
 let cossuRadiusLayer = null;
 let cossuShowRadius = false;
@@ -2487,6 +2488,39 @@ function _cossuMarkerIcon(types) {
   });
 }
 
+// Делает Leaflet-попап перетаскиваемым мышью по экрану.
+// Двигаем дочерние элементы попапа через transform (Leaflet не трогает их transform,
+// он управляет позицией родителя .leaflet-popup). Так работает и по X, и по Y.
+function _makePopupDraggable(el) {
+  const handle = el.querySelector('.leaflet-popup-content-wrapper') || el;
+  handle.style.cursor = 'move';
+  const parts = Array.from(el.children); // content-wrapper, tip-container, close-button
+
+  handle.addEventListener('mousedown', (ev) => {
+    // Не таскать если кликнули по интерактивным элементам
+    if (ev.target.closest('button, a, input, select, textarea')) return;
+    ev.preventDefault();
+    const startX = ev.clientX, startY = ev.clientY;
+    const ox = el._dragX || 0;
+    const oy = el._dragY || 0;
+    if (map.dragging) map.dragging.disable();
+
+    const onMove = (e2) => {
+      const dx = ox + (e2.clientX - startX);
+      const dy = oy + (e2.clientY - startY);
+      el._dragX = dx; el._dragY = dy;
+      for (const p of parts) p.style.transform = `translate(${dx}px, ${dy}px)`;
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (map.dragging) map.dragging.enable();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 function _cossuPassesFilters(inst) {
   // Фильтр по типам
   if (cossuTypeFilter.size > 0) {
@@ -2515,7 +2549,7 @@ function _cossuPassesFilters(inst) {
 function _renderCossuLayer() {
   if (!map) return;
   if (cossuLayer) { map.removeLayer(cossuLayer); cossuLayer = null; }
-  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
+  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; _cossuLineMembers.clear(); }
   if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
   if (_cossuMarkersHidden) return;          // точки скрыты галочкой
   if (!cossuData || !cossuData.length) return;
@@ -2530,6 +2564,11 @@ function _renderCossuLayer() {
       _drawCossuQueueLines(inst);
       _drawCossuRadius(inst);
     });
+    // Делаем попап перетаскиваемым по экрану
+    marker.on('popupopen', (e) => {
+      const el = e.popup.getElement();
+      if (el) _makePopupDraggable(el);
+    });
     cossuLayer.addLayer(marker);
   }
   map.addLayer(cossuLayer);
@@ -2537,7 +2576,12 @@ function _renderCossuLayer() {
 
 // Рисует линии от учреждения с очередью к 3 ближайшим того же типа без очереди
 function _drawCossuQueueLines(inst) {
+  // Если кликнули по участнику текущих линий (точка-источник или одна из назначений)
+  // — оставляем линии как есть, не сбрасываем.
+  if (cossuLinesLayer && inst && _cossuLineMembers.has(inst.org_bin)) return;
+
   if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
+  _cossuLineMembers.clear();
   if (!inst || (inst.total_queue_count || 0) <= 0) return;   // только для тех где есть очередь
   if (inst.lat == null || inst.lon == null) return;
 
@@ -2559,7 +2603,9 @@ function _drawCossuQueueLines(inst) {
   if (!nearest.length) return;
 
   cossuLinesLayer = L.layerGroup();
+  _cossuLineMembers.add(inst.org_bin);          // источник
   for (const c of nearest) {
+    _cossuLineMembers.add(c.org_bin);           // назначение
     const dist = origin.distanceTo(L.latLng(c.lat, c.lon)); // метры
     const distKm = dist >= 1000 ? `${(dist / 1000).toFixed(1)} км` : `${Math.round(dist)} м`;
     const line = L.polyline([[inst.lat, inst.lon], [c.lat, c.lon]], {
@@ -2603,6 +2649,7 @@ function clearCossuQueueFilter() {
 function _cossuMapPopup(inst) {
   const branches = inst.branches || [];
   const types = (inst.types || []).map(t => `<span style="display:inline-block;background:#cffafe;color:#155e75;padding:1px 6px;border-radius:8px;font-size:11px;margin-right:3px;margin-top:2px">${_escapeHtml(t)}</span>`).join('');
+  const subtypes = (inst.subtypes || []).map(s => `<span style="display:inline-block;background:#f1f5f9;color:#475569;padding:1px 6px;border-radius:8px;font-size:11px;margin-right:3px;margin-top:2px">${_escapeHtml(s)}</span>`).join('');
   return `<div style="font-size:13px;min-width:240px">
     <div style="font-weight:700;color:#0e7490;line-height:1.3;margin-bottom:4px">${_escapeHtml(inst.org_name || '—')}</div>
     <div style="font-size:11px;color:#64748b;margin-bottom:6px">БИН: ${_escapeHtml(inst.org_bin)} · ${branches.length} отд.</div>
@@ -2613,7 +2660,8 @@ function _cossuMapPopup(inst) {
       <span style="font-size:11px"><b>${_cossuFree(inst.total_fakt_koika_mesto, inst.total_residents_count)}</b> свободно</span>
       <span style="font-size:11px"><b>${inst.total_queue_count || 0}</b> в очереди</span>
     </div>
-    ${types ? `<div style="margin-top:4px">${types}</div>` : ''}
+    ${types ? `<div style="margin-top:4px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Тип:</span><br>${types}</div>` : ''}
+    ${subtypes ? `<div style="margin-top:6px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Подтип:</span><br>${subtypes}</div>` : ''}
   </div>`;
 }
 
