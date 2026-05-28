@@ -193,6 +193,13 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 /* Переключатель слоёв */
 .leaflet-top.leaflet-right .leaflet-control-layers { margin-top:160px; }
 
+/* Подпись расстояния на линии до ближайшего ЦОССУ */
+.cossu-dist-label {
+  background:#0e7490; color:#fff; border:none; border-radius:6px;
+  padding:2px 7px; font-size:11px; font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.cossu-dist-label::before { display:none; }  /* убрать стрелку тултипа */
+
 /* ── Модальное окно ── */
 .modal-overlay {
   display:none; position:fixed; inset:0;
@@ -328,6 +335,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
     <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
     <button class="action-btn" onclick="openCossuModal()" style="background:#0891b2;color:#fff;border-color:#0891b2">Список ЦОССУ</button>
+    <button class="action-btn" onclick="openCossuStats()" style="background:#0e7490;color:#fff;border-color:#0e7490">Статистика ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <label class="cat-item" style="margin-top:6px">
       <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
@@ -350,6 +358,40 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <div id="admin-tools" style="display:none;margin-top:4px">
       <button class="action-btn primary" onclick="openImportModal()" style="margin-bottom:4px">Загрузить данные (xlsx)</button>
       <button class="action-btn" onclick="openUsersModal()" style="width:100%">Управление пользователями</button>
+    </div>
+  </div>
+
+  <!-- Секция фильтра типов ЦОССУ (видна только cossu-роли) -->
+  <div id="cossu-types-head" class="s-head" style="display:none">
+    Тип ЦОССУ
+  </div>
+  <div id="cossu-types-body" class="s-body" style="display:none">
+    <div class="cat-hint">Показать на карте только выбранные типы (можно несколько)</div>
+    <label class="cat-item"><input type="checkbox" class="cossu-type-chk" value="ЦОССУ В УСЛОВИЯХ СТАЦИОНАРА">
+      <span class="dot" style="background:#ef4444"></span>Стационар</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-type-chk" value="ЦОССУ В УСЛОВИЯХ ПОЛУСТАЦИОНАРА">
+      <span class="dot" style="background:#3b82f6"></span>Полустационар</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-type-chk" value="ЦОССУ В УСЛОВИЯХ УХОДА НА ДОМУ">
+      <span class="dot" style="background:#22c55e"></span>Уход на дому</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-type-chk" value="ЦОССУ В УСЛОВИЯХ ВРЕМЕННОГО ПРЕБЫВАНИЯ">
+      <span class="dot" style="background:#a855f7"></span>Временное пребывание</label>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="clearCossuTypeFilter()">Сбросить</span>
+    </div>
+  </div>
+
+  <!-- Секция фильтра по очереди ЦОССУ (видна только cossu-роли) -->
+  <div id="cossu-queue-head" class="s-head" style="display:none">
+    Очередь
+  </div>
+  <div id="cossu-queue-body" class="s-body" style="display:none">
+    <div class="cat-hint">Фильтр учреждений по наличию очереди</div>
+    <label class="cat-item"><input type="checkbox" class="cossu-queue-chk" value="none">
+      <span class="dot" style="background:#22c55e"></span>Нет очереди</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-queue-chk" value="has">
+      <span class="dot" style="background:#ef4444"></span>Есть очередь</label>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="clearCossuQueueFilter()">Сбросить</span>
     </div>
   </div>
 
@@ -470,6 +512,16 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div class="sel-title">Статистика области</div>
   <span class="sel-close" onclick="closeSel()">&#x2715;</span>
   <table id="sel-table"></table>
+</div>
+
+<!-- Легенда типов ЦОССУ (показывается только cossu-роли) -->
+<div id="cossu-legend" style="display:none;position:fixed;bottom:16px;right:16px;z-index:999;background:#fff;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.16);padding:10px 14px;font-size:12px;line-height:1.9">
+  <div style="font-weight:700;color:#0e7490;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.4px">Типы ЦОССУ</div>
+  <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ef4444;margin-right:7px;vertical-align:middle"></span>Стационар</div>
+  <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#3b82f6;margin-right:7px;vertical-align:middle"></span>Полустационар</div>
+  <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#22c55e;margin-right:7px;vertical-align:middle"></span>Уход на дому</div>
+  <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#a855f7;margin-right:7px;vertical-align:middle"></span>Временное пребывание</div>
+  <div style="margin-top:4px;font-size:10px;color:#94a3b8">Делёный круг = несколько типов</div>
 </div>
 
 <!-- Подсказка режима выбора на карте -->
@@ -622,12 +674,51 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <button onclick="closeCossuModal()" title="Закрыть"
         style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
     </div>
-    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc">
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="cossu-search" type="text" placeholder="Поиск по названию / БИН / адресу..."
         oninput="renderCossuList()"
-        style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+        style="flex:1;min-width:200px;box-sizing:border-box;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
+      <select id="cossu-filter-type" onchange="renderCossuList()"
+        style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+        <option value="">Все типы</option>
+        <option value="ЦОССУ В УСЛОВИЯХ СТАЦИОНАРА">Стационар</option>
+        <option value="ЦОССУ В УСЛОВИЯХ ПОЛУСТАЦИОНАРА">Полустационар</option>
+        <option value="ЦОССУ В УСЛОВИЯХ УХОДА НА ДОМУ">Уход на дому</option>
+        <option value="ЦОССУ В УСЛОВИЯХ ВРЕМЕННОГО ПРЕБЫВАНИЯ">Временное пребывание</option>
+      </select>
+      <select id="cossu-filter-coords" onchange="renderCossuList()"
+        style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+        <option value="">Все (координаты)</option>
+        <option value="with">Есть точка на карте</option>
+        <option value="without">Нет точки</option>
+      </select>
     </div>
     <div id="cossu-list" style="display:flex;flex-direction:column;gap:14px;padding:16px 20px 20px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- ── Модальное окно: статистика ЦОССУ по областям ── -->
+<div class="modal-overlay" id="cossu-stats-modal">
+  <div class="coord-box" style="width:780px;max-width:96vw;max-height:90vh;padding:0;display:flex;flex-direction:column">
+    <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="color:#0e7490;margin:0">Статистика ЦОССУ по областям</h3>
+      <button onclick="closeCossuStats()" title="Закрыть"
+        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+    </div>
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;color:#64748b">Сортировка:</span>
+      <select id="cossu-stats-sort" onchange="renderCossuStats()"
+        style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+        <option value="region">По области (А-Я)</option>
+        <option value="queue_desc">В очереди ↓ (больше сверху)</option>
+        <option value="queue_asc">В очереди ↑ (меньше сверху)</option>
+        <option value="koika_desc">Койко-мест ↓</option>
+        <option value="koika_asc">Койко-мест ↑</option>
+        <option value="residents_desc">Пребывает ↓</option>
+        <option value="residents_asc">Пребывает ↑</option>
+      </select>
+    </div>
+    <div id="cossu-stats-body" style="padding:16px 20px 20px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -907,6 +998,7 @@ function startApp() {
     document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
     document.querySelector('[onclick="openCossuModal()"]').style.display = 'none';
+    document.querySelector('[onclick="openCossuStats()"]').style.display = 'none';
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
     document.getElementById('stats-panel').style.display = 'block';
@@ -920,21 +1012,28 @@ function startApp() {
       if (head) head.style.display = 'none';
       if (body) body.style.display = 'none';
     });
-    document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
     document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
     document.querySelector('[onclick="openKandasModal()"]').style.display = 'none';
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
+    // Галочку "Скрыть точки" оставляем видимой (работает со слоем ЦОССУ)
     // Показываем стат-панель с ЦОССУ-блоком
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-cossu-info').style.display = 'block';
     document.getElementById('st-normal-info').style.display = 'none';
+    // Показываем секцию фильтра типов + очереди + легенду
+    document.getElementById('cossu-types-head').style.display = '';
+    document.getElementById('cossu-types-body').style.display = '';
+    document.getElementById('cossu-queue-head').style.display = '';
+    document.getElementById('cossu-queue-body').style.display = '';
+    document.getElementById('cossu-legend').style.display = 'block';
   } else {
     // ── Обычный режим: скрыть кнопки Кандасы / ЦОССУ и линзу ──
     document.getElementById('stats-panel').style.display = 'block';
     document.querySelectorAll('[onclick="openKandasModal()"]').forEach(el => el.style.display = 'none');
     document.querySelectorAll('[onclick="openCossuModal()"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('[onclick="openCossuStats()"]').forEach(el => el.style.display = 'none');
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     if (currentUser.role === 'admin') {
       document.getElementById('admin-tools').style.display = 'block';
@@ -959,7 +1058,7 @@ function initMap() {
   };
   baseLayers['Стандарт'].addTo(map);
   const layerCtrl = L.control.layers(baseLayers, {}, {
-    position: isKandasRole() ? 'bottomleft' : 'topright',
+    position: (isKandasRole() || isCossuRole()) ? 'bottomleft' : 'topright',
     collapsed: true
   }).addTo(map);
 
@@ -1727,8 +1826,23 @@ function clearCats() {
 // ═══════════════════════════════════════════════════════
 //  Скрыть / показать все точки на карте
 // ═══════════════════════════════════════════════════════
+let _cossuMarkersHidden = false;
+
 function toggleHideMarkers(hide) {
-  if (!clusterGroup || !map) return;
+  if (!map) return;
+  // Режим ЦОССУ — управляем слоем cossuLayer
+  if (isCossuRole()) {
+    _cossuMarkersHidden = hide;
+    if (hide) {
+      if (cossuLayer && map.hasLayer(cossuLayer)) map.removeLayer(cossuLayer);
+      if (cossuLinesLayer && map.hasLayer(cossuLinesLayer)) map.removeLayer(cossuLinesLayer);
+    } else {
+      _renderCossuLayer();
+    }
+    return;
+  }
+  // Обычный режим — кластер домов
+  if (!clusterGroup) return;
   if (hide) {
     if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
   } else {
@@ -2261,32 +2375,152 @@ function isCossuRole() {
 // Слой маркеров ЦОССУ
 let cossuLayer = null;
 
-// Бирюзовая иконка с буквой Ц
-const cossuIcon = L.divIcon({
-  className: '',
-  html: `<div style="
-    width:30px;height:30px;border-radius:50%;
-    background:#0891b2;border:3px solid #fff;
-    box-shadow:0 2px 6px rgba(0,0,0,.4);
-    display:flex;align-items:center;justify-content:center;
-    color:#fff;font-size:13px;font-weight:700">Ц</div>`,
-  iconSize: [30, 30],
-  iconAnchor: [15, 15],
-  popupAnchor: [0, -16],
-});
+// Цвета типов ЦОССУ
+const COSSU_TYPE_COLORS = {
+  'ЦОССУ В УСЛОВИЯХ СТАЦИОНАРА':            '#ef4444',  // красный
+  'ЦОССУ В УСЛОВИЯХ ПОЛУСТАЦИОНАРА':        '#3b82f6',  // синий
+  'ЦОССУ В УСЛОВИЯХ УХОДА НА ДОМУ':         '#22c55e',  // зелёный
+  'ЦОССУ В УСЛОВИЯХ ВРЕМЕННОГО ПРЕБЫВАНИЯ': '#a855f7',  // фиолетовый
+};
+// Короткие подписи для UI
+const COSSU_TYPE_SHORT = {
+  'ЦОССУ В УСЛОВИЯХ СТАЦИОНАРА':            'Стационар',
+  'ЦОССУ В УСЛОВИЯХ ПОЛУСТАЦИОНАРА':        'Полустационар',
+  'ЦОССУ В УСЛОВИЯХ УХОДА НА ДОМУ':         'Уход на дому',
+  'ЦОССУ В УСЛОВИЯХ ВРЕМЕННОГО ПРЕБЫВАНИЯ': 'Временное пребывание',
+};
+const COSSU_ALL_TYPES = Object.keys(COSSU_TYPE_COLORS);
+
+// Активный фильтр типов на карте (пусто = показывать все)
+let cossuTypeFilter = new Set();
+// Активный фильтр по очереди: 'none' / 'has' (пусто = все)
+let cossuQueueFilter = new Set();
+// Слой линий до ближайших ЦОССУ без очереди
+let cossuLinesLayer = null;
+
+function _cossuColors(types) {
+  // Сохраняем порядок из COSSU_ALL_TYPES для стабильности цветов в круге
+  const present = COSSU_ALL_TYPES.filter(t => (types || []).includes(t));
+  const cols = present.map(t => COSSU_TYPE_COLORS[t]);
+  return cols.length ? cols : ['#94a3b8'];
+}
+
+function _cossuMarkerIcon(types) {
+  const cols = _cossuColors(types);
+  let bg;
+  if (cols.length === 1) {
+    bg = cols[0];
+  } else {
+    // Делим круг на равные сектора по числу типов
+    const seg = 360 / cols.length;
+    const stops = cols.map((c, i) => `${c} ${i * seg}deg ${(i + 1) * seg}deg`).join(', ');
+    bg = `conic-gradient(${stops})`;
+  }
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:26px;height:26px;border-radius:50%;background:${bg};border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -14],
+  });
+}
+
+function _cossuPassesFilters(inst) {
+  // Фильтр по типам
+  if (cossuTypeFilter.size > 0) {
+    if (!(inst.types || []).some(t => cossuTypeFilter.has(t))) return false;
+  }
+  // Фильтр по очереди
+  if (cossuQueueFilter.size > 0) {
+    const hasQueue = (inst.total_queue_count || 0) > 0;
+    const key = hasQueue ? 'has' : 'none';
+    if (!cossuQueueFilter.has(key)) return false;
+  }
+  return true;
+}
 
 function _renderCossuLayer() {
   if (!map) return;
   if (cossuLayer) { map.removeLayer(cossuLayer); cossuLayer = null; }
+  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
+  if (_cossuMarkersHidden) return;          // точки скрыты галочкой
   if (!cossuData || !cossuData.length) return;
   cossuLayer = L.layerGroup();
   for (const inst of cossuData) {
     if (inst.lat == null || inst.lon == null) continue;
-    const marker = L.marker([inst.lat, inst.lon], { icon: cossuIcon });
+    if (!_cossuPassesFilters(inst)) continue;
+    const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
     marker.bindPopup(_cossuMapPopup(inst), { maxWidth: 320 });
+    // Клик по точке с очередью → линии к ближайшим без очереди того же типа
+    marker.on('click', () => _drawCossuQueueLines(inst));
     cossuLayer.addLayer(marker);
   }
   map.addLayer(cossuLayer);
+}
+
+// Рисует линии от учреждения с очередью к 3 ближайшим того же типа без очереди
+function _drawCossuQueueLines(inst) {
+  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
+  if (!inst || (inst.total_queue_count || 0) <= 0) return;   // только для тех где есть очередь
+  if (inst.lat == null || inst.lon == null) return;
+
+  const myTypes = new Set(inst.types || []);
+  const origin = L.latLng(inst.lat, inst.lon);
+
+  // Кандидаты: другое учреждение, есть координаты, очередь == 0, общий тип
+  const candidates = cossuData.filter(c =>
+    c.org_bin !== inst.org_bin &&
+    c.lat != null && c.lon != null &&
+    (c.total_queue_count || 0) === 0 &&
+    (c.types || []).some(t => myTypes.has(t))
+  );
+  candidates.sort((a, b) =>
+    origin.distanceTo(L.latLng(a.lat, a.lon)) - origin.distanceTo(L.latLng(b.lat, b.lon))
+  );
+  const nearest = candidates.slice(0, 3);
+
+  if (!nearest.length) return;
+
+  cossuLinesLayer = L.layerGroup();
+  for (const c of nearest) {
+    const dist = origin.distanceTo(L.latLng(c.lat, c.lon)); // метры
+    const distKm = dist >= 1000 ? `${(dist / 1000).toFixed(1)} км` : `${Math.round(dist)} м`;
+    const line = L.polyline([[inst.lat, inst.lon], [c.lat, c.lon]], {
+      color: '#0e7490', weight: 2.5, dashArray: '7 5', opacity: 0.9
+    });
+    line.bindTooltip(distKm, {
+      permanent: true, direction: 'center',
+      className: 'cossu-dist-label'
+    });
+    cossuLinesLayer.addLayer(line);
+  }
+  map.addLayer(cossuLinesLayer);
+}
+
+// Чекбоксы фильтра типов в сайдбаре → перерисовка слоя карты
+document.addEventListener('change', e => {
+  if (!e.target.classList) return;
+  if (e.target.classList.contains('cossu-type-chk')) {
+    cossuTypeFilter.clear();
+    document.querySelectorAll('.cossu-type-chk:checked').forEach(cb => cossuTypeFilter.add(cb.value));
+    _renderCossuLayer();
+  } else if (e.target.classList.contains('cossu-queue-chk')) {
+    cossuQueueFilter.clear();
+    document.querySelectorAll('.cossu-queue-chk:checked').forEach(cb => cossuQueueFilter.add(cb.value));
+    _renderCossuLayer();
+  }
+});
+
+function clearCossuTypeFilter() {
+  document.querySelectorAll('.cossu-type-chk').forEach(cb => cb.checked = false);
+  cossuTypeFilter.clear();
+  _renderCossuLayer();
+}
+
+function clearCossuQueueFilter() {
+  document.querySelectorAll('.cossu-queue-chk').forEach(cb => cb.checked = false);
+  cossuQueueFilter.clear();
+  _renderCossuLayer();
 }
 
 function _cossuMapPopup(inst) {
@@ -2374,6 +2608,115 @@ function closeCossuModal() {
   document.getElementById('cossu-modal').style.display = 'none';
 }
 
+// ── Статистика ЦОССУ по областям и типам ────────────────────────────────────
+function _buildCossuStats() {
+  // { region: { type: {koika, residents, queue, count} } }
+  const stats = {};
+  for (const inst of cossuData) {
+    for (const b of (inst.branches || [])) {
+      const region = b.region || inst.region || 'Не указано';
+      const type   = b.otd_typ || 'Не указано';
+      (stats[region] ??= {});
+      (stats[region][type] ??= { koika: 0, residents: 0, queue: 0, count: 0 });
+      const s = stats[region][type];
+      s.koika     += b.fakt_koika_mesto || 0;
+      s.residents += b.residents_count  || 0;
+      s.queue     += b.queue_count      || 0;
+      s.count     += 1;
+    }
+  }
+  return stats;
+}
+
+function openCossuStats() {
+  document.getElementById('cossu-stats-modal').style.display = 'flex';
+  renderCossuStats();
+}
+
+function closeCossuStats() {
+  document.getElementById('cossu-stats-modal').style.display = 'none';
+}
+
+function renderCossuStats() {
+  const container = document.getElementById('cossu-stats-body');
+  if (!cossuData || !cossuData.length) {
+    container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
+    return;
+  }
+  const stats = _buildCossuStats();
+
+  // Тоталы по области (для сортировки)
+  const regionTotals = {};
+  for (const region of Object.keys(stats)) {
+    const t = { koika: 0, residents: 0, queue: 0 };
+    for (const type of Object.keys(stats[region])) {
+      t.koika     += stats[region][type].koika;
+      t.residents += stats[region][type].residents;
+      t.queue     += stats[region][type].queue;
+    }
+    regionTotals[region] = t;
+  }
+
+  const sortMode = document.getElementById('cossu-stats-sort')?.value || 'region';
+  const regions = Object.keys(stats);
+  const byMetric = (m, dir) => (a, b) =>
+    dir === 'desc' ? regionTotals[b][m] - regionTotals[a][m] : regionTotals[a][m] - regionTotals[b][m];
+  const sorters = {
+    region:        (a, b) => a.localeCompare(b, 'ru'),
+    queue_desc:     byMetric('queue', 'desc'),
+    queue_asc:      byMetric('queue', 'asc'),
+    koika_desc:     byMetric('koika', 'desc'),
+    koika_asc:      byMetric('koika', 'asc'),
+    residents_desc: byMetric('residents', 'desc'),
+    residents_asc:  byMetric('residents', 'asc'),
+  };
+  regions.sort(sorters[sortMode] || sorters.region);
+
+  container.innerHTML = regions.map(region => {
+    const byType = stats[region];
+    // Типы в фиксированном порядке + любые неизвестные в конце
+    const typeOrder = [...COSSU_ALL_TYPES, ...Object.keys(byType).filter(t => !COSSU_ALL_TYPES.includes(t))];
+    const tot = { koika: 0, residents: 0, queue: 0 };
+    const rows = typeOrder.filter(t => byType[t]).map(t => {
+      const s = byType[t];
+      tot.koika += s.koika; tot.residents += s.residents; tot.queue += s.queue;
+      const color = COSSU_TYPE_COLORS[t] || '#94a3b8';
+      const label = COSSU_TYPE_SHORT[t] || t;
+      return `<tr>
+        <td style="padding:5px 10px 5px 12px;white-space:nowrap">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${label}
+        </td>
+        <td style="text-align:right;padding:5px 10px;font-weight:600">${s.koika}</td>
+        <td style="text-align:right;padding:5px 10px;font-weight:600">${s.residents}</td>
+        <td style="text-align:right;padding:5px 10px;font-weight:600;color:${s.queue > 0 ? '#ef4444' : '#374151'}">${s.queue}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:8px 12px;background:#f1f5f9;font-weight:700;color:#0f172a;font-size:13px">${_escapeHtml(region)}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e2e8f0">
+            <th style="text-align:left;padding:5px 10px 5px 12px">Тип</th>
+            <th style="text-align:right;padding:5px 10px">Койко-мест</th>
+            <th style="text-align:right;padding:5px 10px">Пребывает</th>
+            <th style="text-align:right;padding:5px 10px">В очереди</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="border-top:1px solid #e2e8f0;background:#fafafa">
+            <td style="padding:5px 10px 5px 12px;font-weight:700;color:#0e7490">Итого</td>
+            <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.koika}</td>
+            <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.residents}</td>
+            <td style="text-align:right;padding:5px 10px;font-weight:700;color:${tot.queue > 0 ? '#ef4444' : '#0e7490'}">${tot.queue}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+  }).join('');
+}
+
 function _escapeHtml(s) {
   if (s == null) return '';
   return String(s)
@@ -2388,17 +2731,30 @@ function renderCossuList() {
     return;
   }
   const q = (document.getElementById('cossu-search')?.value || '').trim().toLowerCase();
-  const filtered = q
-    ? cossuData.filter(inst => {
-        const s = `${inst.org_name || ''} ${inst.org_bin} ${inst.fulladdress || ''} ${inst.region || ''}`.toLowerCase();
-        return s.includes(q);
-      })
-    : cossuData;
+  const typeFilter   = document.getElementById('cossu-filter-type')?.value || '';
+  const coordsFilter = document.getElementById('cossu-filter-coords')?.value || '';
+
+  const filtered = cossuData.filter(inst => {
+    // Поиск по тексту
+    if (q) {
+      const s = `${inst.org_name || ''} ${inst.org_bin} ${inst.fulladdress || ''} ${inst.region || ''}`.toLowerCase();
+      if (!s.includes(q)) return false;
+    }
+    // Фильтр по типу
+    if (typeFilter && !(inst.types || []).includes(typeFilter)) return false;
+    // Фильтр по наличию координат
+    const hasCoords = inst.lat != null && inst.lon != null;
+    if (coordsFilter === 'with' && !hasCoords) return false;
+    if (coordsFilter === 'without' && hasCoords) return false;
+    return true;
+  });
+
   if (!filtered.length) {
     container.innerHTML = '<div style="color:#94a3b8;text-align:center">Ничего не найдено</div>';
     return;
   }
-  container.innerHTML = filtered.map(renderCossuCard).join('');
+  container.innerHTML = `<div style="font-size:12px;color:#64748b;margin-bottom:2px">Найдено учреждений: ${filtered.length}</div>` +
+    filtered.map(renderCossuCard).join('');
 }
 
 function renderCossuCard(inst) {
