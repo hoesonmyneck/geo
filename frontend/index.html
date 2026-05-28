@@ -390,6 +390,10 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <span class="dot" style="background:#22c55e"></span>Нет очереди</label>
     <label class="cat-item"><input type="checkbox" class="cossu-queue-chk" value="has">
       <span class="dot" style="background:#ef4444"></span>Есть очередь</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-queue-chk" value="full">
+      <span class="dot" style="background:#f59e0b"></span>Заполнен</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-queue-chk" value="over">
+      <span class="dot" style="background:#dc2626"></span>Переполнено</label>
     <div style="margin-top:6px">
       <span class="clear-link" onclick="clearCossuQueueFilter()">Сбросить</span>
     </div>
@@ -716,6 +720,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
         <option value="koika_asc">Койко-мест ↑</option>
         <option value="residents_desc">Пребывает ↓</option>
         <option value="residents_asc">Пребывает ↑</option>
+        <option value="free_desc">Свободно ↓</option>
+        <option value="free_asc">Свободно ↑</option>
       </select>
     </div>
     <div id="cossu-stats-body" style="padding:16px 20px 20px;overflow-y:auto"></div>
@@ -2391,6 +2397,12 @@ const COSSU_TYPE_SHORT = {
 };
 const COSSU_ALL_TYPES = Object.keys(COSSU_TYPE_COLORS);
 
+// Свободные места = койко-мест − пребывает, но не меньше 0
+// (бывают кейсы где пребывает > койко-мест → "переполнено", свободных мест нет)
+function _cossuFree(koika, residents) {
+  return Math.max(0, (koika || 0) - (residents || 0));
+}
+
 // Активный фильтр типов на карте (пусто = показывать все)
 let cossuTypeFilter = new Set();
 // Активный фильтр по очереди: 'none' / 'has' (пусто = все)
@@ -2430,11 +2442,22 @@ function _cossuPassesFilters(inst) {
   if (cossuTypeFilter.size > 0) {
     if (!(inst.types || []).some(t => cossuTypeFilter.has(t))) return false;
   }
-  // Фильтр по очереди
+  // Фильтр по очереди (OR-логика между выбранными опциями)
   if (cossuQueueFilter.size > 0) {
-    const hasQueue = (inst.total_queue_count || 0) > 0;
-    const key = hasQueue ? 'has' : 'none';
-    if (!cossuQueueFilter.has(key)) return false;
+    const queue     = inst.total_queue_count || 0;
+    const koika     = inst.total_fakt_koika_mesto || 0;
+    const residents = inst.total_residents_count || 0;
+    // "Заполнен" = ровно мест (residents == koika) и очереди нет
+    const isFull = koika > 0 && residents === koika && queue === 0;
+    // "Переполнено" = пребывает больше койко-мест
+    const isOver = koika > 0 && residents > koika;
+
+    let match = false;
+    if (cossuQueueFilter.has('none') && queue === 0) match = true;
+    if (cossuQueueFilter.has('has')  && queue > 0)   match = true;
+    if (cossuQueueFilter.has('full') && isFull)      match = true;
+    if (cossuQueueFilter.has('over') && isOver)      match = true;
+    if (!match) return false;
   }
   return true;
 }
@@ -2533,6 +2556,7 @@ function _cossuMapPopup(inst) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:11px"><b>${inst.total_fakt_koika_mesto || 0}</b> койко-мест</span>
       <span style="font-size:11px"><b>${inst.total_residents_count || 0}</b> получателей</span>
+      <span style="font-size:11px"><b>${_cossuFree(inst.total_fakt_koika_mesto, inst.total_residents_count)}</b> свободно</span>
       <span style="font-size:11px"><b>${inst.total_queue_count || 0}</b> в очереди</span>
     </div>
     ${types ? `<div style="margin-top:4px">${types}</div>` : ''}
@@ -2637,6 +2661,58 @@ function closeCossuStats() {
   document.getElementById('cossu-stats-modal').style.display = 'none';
 }
 
+// Рендер одной карточки статистики (область или РК). isPinned — выделенная РК-шапка.
+function _renderCossuStatsCard(title, byType, isPinned) {
+  const typeOrder = [...COSSU_ALL_TYPES, ...Object.keys(byType).filter(t => !COSSU_ALL_TYPES.includes(t))];
+  const tot = { koika: 0, residents: 0, queue: 0 };
+  const rows = typeOrder.filter(t => byType[t]).map(t => {
+    const s = byType[t];
+    tot.koika += s.koika; tot.residents += s.residents; tot.queue += s.queue;
+    const free  = _cossuFree(s.koika, s.residents);
+    const color = COSSU_TYPE_COLORS[t] || '#94a3b8';
+    const label = COSSU_TYPE_SHORT[t] || t;
+    return `<tr>
+      <td style="padding:5px 10px 5px 12px;white-space:nowrap">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${label}
+      </td>
+      <td style="text-align:right;padding:5px 10px;font-weight:600">${s.koika}</td>
+      <td style="text-align:right;padding:5px 10px;font-weight:600">${s.residents}</td>
+      <td style="text-align:right;padding:5px 10px;font-weight:600;color:${free > 0 ? '#059669' : '#374151'}">${free}</td>
+      <td style="text-align:right;padding:5px 10px;font-weight:600;color:${s.queue > 0 ? '#ef4444' : '#374151'}">${s.queue}</td>
+    </tr>`;
+  }).join('');
+  const totFree   = _cossuFree(tot.koika, tot.residents);
+  const headerStyle = isPinned
+    ? 'background:linear-gradient(135deg,#0891b2 0%,#0e7490 100%);color:#fff'
+    : 'background:#f1f5f9;color:#0f172a';
+  const cardBorder = isPinned ? 'border:2px solid #0891b2' : 'border:1px solid #e2e8f0';
+
+  return `<div style="${cardBorder};border-radius:8px;margin-bottom:12px;overflow:hidden">
+    <div style="padding:8px 12px;${headerStyle};font-weight:700;font-size:13px">${_escapeHtml(title)}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e2e8f0">
+          <th style="text-align:left;padding:5px 10px 5px 12px">Тип</th>
+          <th style="text-align:right;padding:5px 10px">Койко-мест</th>
+          <th style="text-align:right;padding:5px 10px">Пребывает</th>
+          <th style="text-align:right;padding:5px 10px">Свободно</th>
+          <th style="text-align:right;padding:5px 10px">В очереди</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="border-top:1px solid #e2e8f0;background:#fafafa">
+          <td style="padding:5px 10px 5px 12px;font-weight:700;color:#0e7490">Итого</td>
+          <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.koika}</td>
+          <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.residents}</td>
+          <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${totFree}</td>
+          <td style="text-align:right;padding:5px 10px;font-weight:700;color:${tot.queue > 0 ? '#ef4444' : '#0e7490'}">${tot.queue}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>`;
+}
+
 function renderCossuStats() {
   const container = document.getElementById('cossu-stats-body');
   if (!cossuData || !cossuData.length) {
@@ -2644,6 +2720,19 @@ function renderCossuStats() {
     return;
   }
   const stats = _buildCossuStats();
+
+  // РК-агрегат: суммируем все области по типам
+  const rkByType = {};
+  for (const region of Object.keys(stats)) {
+    for (const type of Object.keys(stats[region])) {
+      (rkByType[type] ??= { koika: 0, residents: 0, queue: 0, count: 0 });
+      const s = stats[region][type];
+      rkByType[type].koika     += s.koika;
+      rkByType[type].residents += s.residents;
+      rkByType[type].queue     += s.queue;
+      rkByType[type].count     += s.count;
+    }
+  }
 
   // Тоталы по области (для сортировки)
   const regionTotals = {};
@@ -2654,6 +2743,7 @@ function renderCossuStats() {
       t.residents += stats[region][type].residents;
       t.queue     += stats[region][type].queue;
     }
+    t.free = _cossuFree(t.koika, t.residents);
     regionTotals[region] = t;
   }
 
@@ -2669,52 +2759,14 @@ function renderCossuStats() {
     koika_asc:      byMetric('koika', 'asc'),
     residents_desc: byMetric('residents', 'desc'),
     residents_asc:  byMetric('residents', 'asc'),
+    free_desc:      byMetric('free', 'desc'),
+    free_asc:       byMetric('free', 'asc'),
   };
   regions.sort(sorters[sortMode] || sorters.region);
 
-  container.innerHTML = regions.map(region => {
-    const byType = stats[region];
-    // Типы в фиксированном порядке + любые неизвестные в конце
-    const typeOrder = [...COSSU_ALL_TYPES, ...Object.keys(byType).filter(t => !COSSU_ALL_TYPES.includes(t))];
-    const tot = { koika: 0, residents: 0, queue: 0 };
-    const rows = typeOrder.filter(t => byType[t]).map(t => {
-      const s = byType[t];
-      tot.koika += s.koika; tot.residents += s.residents; tot.queue += s.queue;
-      const color = COSSU_TYPE_COLORS[t] || '#94a3b8';
-      const label = COSSU_TYPE_SHORT[t] || t;
-      return `<tr>
-        <td style="padding:5px 10px 5px 12px;white-space:nowrap">
-          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${label}
-        </td>
-        <td style="text-align:right;padding:5px 10px;font-weight:600">${s.koika}</td>
-        <td style="text-align:right;padding:5px 10px;font-weight:600">${s.residents}</td>
-        <td style="text-align:right;padding:5px 10px;font-weight:600;color:${s.queue > 0 ? '#ef4444' : '#374151'}">${s.queue}</td>
-      </tr>`;
-    }).join('');
-
-    return `<div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:8px 12px;background:#f1f5f9;font-weight:700;color:#0f172a;font-size:13px">${_escapeHtml(region)}</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e2e8f0">
-            <th style="text-align:left;padding:5px 10px 5px 12px">Тип</th>
-            <th style="text-align:right;padding:5px 10px">Койко-мест</th>
-            <th style="text-align:right;padding:5px 10px">Пребывает</th>
-            <th style="text-align:right;padding:5px 10px">В очереди</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-        <tfoot>
-          <tr style="border-top:1px solid #e2e8f0;background:#fafafa">
-            <td style="padding:5px 10px 5px 12px;font-weight:700;color:#0e7490">Итого</td>
-            <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.koika}</td>
-            <td style="text-align:right;padding:5px 10px;font-weight:700;color:#0e7490">${tot.residents}</td>
-            <td style="text-align:right;padding:5px 10px;font-weight:700;color:${tot.queue > 0 ? '#ef4444' : '#0e7490'}">${tot.queue}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>`;
-  }).join('');
+  // РК всегда первая и закреплена сверху, не зависит от сортировки
+  const rkCard = _renderCossuStatsCard('Республика Казахстан', rkByType, true);
+  container.innerHTML = rkCard + regions.map(region => _renderCossuStatsCard(region, stats[region], false)).join('');
 }
 
 function _escapeHtml(s) {
@@ -2801,6 +2853,7 @@ function _renderCossuSummary(inst) {
   const stats = [
     ['Койко-мест (факт)', inst.total_fakt_koika_mesto],
     ['Получателей услуг', inst.total_residents_count],
+    ['Свободно',          _cossuFree(inst.total_fakt_koika_mesto, inst.total_residents_count)],
     ['В очереди',         inst.total_queue_count],
   ];
   const types    = inst.types    || [];
@@ -2854,6 +2907,7 @@ function _renderCossuBranch(inst, b) {
     ['Адрес',              b.additional_address],
     ['Койко-мест (факт)',  b.fakt_koika_mesto],
     ['Получателей услуг',  b.residents_count],
+    ['Свободно',           _cossuFree(b.fakt_koika_mesto, b.residents_count)],
     ['В очереди',          b.queue_count],
   ];
   return `
