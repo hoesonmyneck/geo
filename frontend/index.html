@@ -2489,27 +2489,31 @@ function _cossuMarkerIcon(types) {
 }
 
 // Делает Leaflet-попап перетаскиваемым мышью по экрану.
-// Двигаем дочерние элементы попапа через transform (Leaflet не трогает их transform,
-// он управляет позицией родителя .leaflet-popup). Так работает и по X, и по Y.
+// Двигаем сам контейнер .leaflet-popup, дописывая translate к его transform.
+// Leaflet при каждом открытии заново выставляет transform контейнера (позицию привязки),
+// поэтому попап всегда открывается на стандартном месте, а не там куда его утащили.
 function _makePopupDraggable(el) {
   const handle = el.querySelector('.leaflet-popup-content-wrapper') || el;
   handle.style.cursor = 'move';
-  const parts = Array.from(el.children); // content-wrapper, tip-container, close-button
 
-  handle.addEventListener('mousedown', (ev) => {
-    // Не таскать если кликнули по интерактивным элементам
+  // Базовый transform от Leaflet (свежая позиция привязки на момент открытия)
+  const baseTransform = el.style.transform || '';
+  el._dragX = 0; el._dragY = 0;
+
+  // Снимаем прошлый обработчик, если попап переиспользуется
+  if (el._dragDown) handle.removeEventListener('mousedown', el._dragDown);
+
+  const onDown = (ev) => {
     if (ev.target.closest('button, a, input, select, textarea')) return;
     ev.preventDefault();
     const startX = ev.clientX, startY = ev.clientY;
-    const ox = el._dragX || 0;
-    const oy = el._dragY || 0;
+    const ox = el._dragX, oy = el._dragY;
     if (map.dragging) map.dragging.disable();
 
     const onMove = (e2) => {
-      const dx = ox + (e2.clientX - startX);
-      const dy = oy + (e2.clientY - startY);
-      el._dragX = dx; el._dragY = dy;
-      for (const p of parts) p.style.transform = `translate(${dx}px, ${dy}px)`;
+      el._dragX = ox + (e2.clientX - startX);
+      el._dragY = oy + (e2.clientY - startY);
+      el.style.transform = `${baseTransform} translate(${el._dragX}px, ${el._dragY}px)`;
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
@@ -2518,7 +2522,9 @@ function _makePopupDraggable(el) {
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  });
+  };
+  el._dragDown = onDown;
+  handle.addEventListener('mousedown', onDown);
 }
 
 function _cossuPassesFilters(inst) {
