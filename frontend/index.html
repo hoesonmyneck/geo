@@ -341,6 +341,10 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
       Скрыть точки
     </label>
+    <label class="cat-item" id="chk-cossu-radius-label" style="margin-top:4px;display:none">
+      <input type="checkbox" id="chk-cossu-radius" onchange="toggleCossuRadius(this.checked)">
+      Показать радиус
+    </label>
     <!-- <label class="cat-item" style="margin-top:4px">
       <input type="checkbox" id="chk-kandas-lens" onchange="toggleKandasLens(this.checked)">
       <span style="color:#7c3aed;font-weight:600">Линза кандасов</span>
@@ -1024,6 +1028,8 @@ function startApp() {
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
     // Галочку "Скрыть точки" оставляем видимой (работает со слоем ЦОССУ)
+    // Показываем галочку радиуса
+    document.getElementById('chk-cossu-radius-label').style.display = '';
     // Показываем стат-панель с ЦОССУ-блоком
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-cossu-info').style.display = 'block';
@@ -1842,6 +1848,7 @@ function toggleHideMarkers(hide) {
     if (hide) {
       if (cossuLayer && map.hasLayer(cossuLayer)) map.removeLayer(cossuLayer);
       if (cossuLinesLayer && map.hasLayer(cossuLinesLayer)) map.removeLayer(cossuLinesLayer);
+      if (cossuRadiusLayer && map.hasLayer(cossuRadiusLayer)) map.removeLayer(cossuRadiusLayer);
     } else {
       _renderCossuLayer();
     }
@@ -2409,6 +2416,49 @@ let cossuTypeFilter = new Set();
 let cossuQueueFilter = new Set();
 // Слой линий до ближайших ЦОССУ без очереди
 let cossuLinesLayer = null;
+// Слой радиусов вокруг выбранной точки + флаг включения
+let cossuRadiusLayer = null;
+let cossuShowRadius = false;
+
+function toggleCossuRadius(on) {
+  cossuShowRadius = on;
+  if (!on && cossuRadiusLayer) {
+    map.removeLayer(cossuRadiusLayer);
+    cossuRadiusLayer = null;
+  }
+  // при включении радиусы рисуются при следующем клике на точку
+}
+
+// Рисует 3 концентрических круга вокруг учреждения: 10км зелёный, 30км жёлтый, 50км красный
+function _drawCossuRadius(inst) {
+  if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
+  if (!cossuShowRadius || !inst || inst.lat == null || inst.lon == null) return;
+  const center = [inst.lat, inst.lon];
+  cossuRadiusLayer = L.layerGroup();
+  // Рисуем от большего к меньшему, чтобы меньшие были сверху
+  const rings = [
+    [50000, '#ef4444', '50 км'],
+    [30000, '#f59e0b', '30 км'],
+    [10000, '#22c55e', '10 км'],
+  ];
+  for (const [radius, color, label] of rings) {
+    L.circle(center, {
+      radius, color, weight: 2, fillColor: color, fillOpacity: 0.18, opacity: 0.85
+    }).addTo(cossuRadiusLayer);
+    // Подпись километража у нижнего края круга (метры → градусы широты: 1° ≈ 111320 м)
+    const dLat = radius / 111320;
+    L.marker([inst.lat - dLat, inst.lon], {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:${color};color:#fff;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35)">${label}</div>`,
+        iconSize: [44, 18],
+        iconAnchor: [22, 9],
+      }),
+    }).addTo(cossuRadiusLayer);
+  }
+  map.addLayer(cossuRadiusLayer);
+}
 
 function _cossuColors(types) {
   // Сохраняем порядок из COSSU_ALL_TYPES для стабильности цветов в круге
@@ -2466,6 +2516,7 @@ function _renderCossuLayer() {
   if (!map) return;
   if (cossuLayer) { map.removeLayer(cossuLayer); cossuLayer = null; }
   if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
+  if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
   if (_cossuMarkersHidden) return;          // точки скрыты галочкой
   if (!cossuData || !cossuData.length) return;
   cossuLayer = L.layerGroup();
@@ -2474,8 +2525,11 @@ function _renderCossuLayer() {
     if (!_cossuPassesFilters(inst)) continue;
     const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
     marker.bindPopup(_cossuMapPopup(inst), { maxWidth: 320 });
-    // Клик по точке с очередью → линии к ближайшим без очереди того же типа
-    marker.on('click', () => _drawCossuQueueLines(inst));
+    // Клик по точке: линии к ближайшим без очереди + радиусы (если включены)
+    marker.on('click', () => {
+      _drawCossuQueueLines(inst);
+      _drawCossuRadius(inst);
+    });
     cossuLayer.addLayer(marker);
   }
   map.addLayer(cossuLayer);
