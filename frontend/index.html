@@ -663,7 +663,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 
 <!-- ── Модальное окно: Кандасы ── -->
 <div class="modal-overlay" id="kandas-modal">
-  <div class="coord-box" style="width:720px;max-width:96vw;max-height:85vh;overflow-y:auto;padding:0;display:flex;flex-direction:column">
+  <div class="coord-box" style="width:1440px;max-width:96vw;max-height:85vh;overflow-y:auto;padding:0;display:flex;flex-direction:column">
     <!-- Заголовок прилипает при скролле -->
     <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
       <h3 style="color:#7c3aed;margin:0">Реестр кандасов</h3>
@@ -1946,7 +1946,8 @@ async function loadKandasLayer() {
   for (const k of kandasData) {
     if (k.lat == null || k.lon == null) continue;
     const marker = L.marker([k.lat, k.lon], { icon: kandasIcon });
-    marker.bindPopup(buildKandasPopup(k), { maxWidth: 320 });
+    // maxHeight убран — высоту/скролл контролирует CSS внутри попапа (max-height:600 + overflow-y:auto)
+    marker.bindPopup(buildKandasPopup(k), { maxWidth: 900, minWidth: 600 });
     marker._kandasData = k;
     // Показывать/скрывать маркер работы при открытии/закрытии попапа
     marker.on('popupopen',  () => _showWorkMarker(k));
@@ -2019,29 +2020,40 @@ function updateKandasStats() {
 
 // Единый маппинг меток и порядок отображения полей extra для кандасов
 const KANDAS_FIELD_ORDER = [
+  // Простые поля из нового xlsx
+  'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz',
+  // Легаси-поля (старые kandas)
   'bin_work',    'work_org',    'work_address', 'position',
-  'staff_pos',   'work_type',   'education',    'specialty',
-  'status',      'cks_cat',     'benefits',     'auto',
+  'staff_pos',   'work_type',   'specialty',
+  'cks_cat',     'benefits',
   'real_estate', 'nationality', 'note',         'family',
 ];
 const KANDAS_FIELD_LABELS = {
+  // Новые поля
+  family_type: 'Семейное положение',
+  occupation:  'Род занятий',
+  working:     'Трудоустроен',
+  avto:        'Авто',
+  nedv:        'Недвижимость',
+  smz:         'СМЗ (сумма ₸)',
+  // Легаси
   bin_work:    'БИН работодателя',
   work_org:    'Название организации',
   work_address:'Адрес работы',
   position:    'Должность по НКЗ',
   staff_pos:   'Штатная должность',
   work_type:   'Вид работы',
-  education:   'Образование',
   specialty:   'Специальность',
-  status:      'Статус',
   cks_cat:     'Категория по ЦКС',
   benefits:    'Льготы',
-  auto:        'Авто',
   real_estate: 'Недвижимость',
   nationality: 'Национальность',
   note:        'Примечание',
   family:      'Семья',
 };
+
+// Булевы поля (0/1 → Нет/Да)
+const KANDAS_BOOL_KEYS = new Set(['working', 'avto', 'nedv']);
 
 // Рендер блока «Семья» из массива [{role, fio, iin}, ...]
 function _renderFamily(members, asTable) {
@@ -2060,7 +2072,14 @@ function _renderFamily(members, asTable) {
 }
 
 // Поля, которые рендерятся в отдельных секциях и НЕ должны попадать в общий список extras
-const KANDAS_FIELDS_SEPARATE = new Set(['soc_portrait']);
+const KANDAS_FIELDS_SEPARATE = new Set([
+  'soc_portrait',
+  // Новые вложенные секции из xlsx
+  'anketa', 'kandas_status', 'reg_address',
+  'education', 'work_history', 'military', 'labor_contract',
+  // Скрытые служебные поля
+  'sdu', 'cks_cat',
+]);
 
 function _kandasExtraRows(extra, asTable) {
   const base = extra || {};
@@ -2074,12 +2093,19 @@ function _kandasExtraRows(extra, asTable) {
     const label = KANDAS_FIELD_LABELS[k] || k;
     const raw   = base[k];
     const empty = raw == null || raw === '' || (Array.isArray(raw) && raw.length === 0);
+    if (empty) continue;          // пропускаем пустые, чтобы не было простыни прочерков
 
     let rendered;
     if (k === 'family' && Array.isArray(raw) && raw.length) {
       rendered = _renderFamily(raw, asTable);
+    } else if (KANDAS_BOOL_KEYS.has(k)) {
+      rendered = Number(raw) === 1 ? '<b style="color:#059669">Да</b>' : '<span style="color:#94a3b8">Нет</span>';
+    } else if (k === 'smz') {
+      // Сумма ₸: округляем и форматируем с пробелами в тысячах
+      const n = parseFloat(raw);
+      rendered = isNaN(n) ? _escapeHtml(String(raw)) : Math.round(n).toLocaleString('ru-RU').replace(/ /g, ' ');
     } else {
-      rendered = empty ? '<span style="color:#cbd5e1">—</span>' : String(raw);
+      rendered = _escapeHtml(String(raw));
     }
 
     if (asTable) {
@@ -2100,11 +2126,186 @@ function _kandasExtraRows(extra, asTable) {
     : parts.join('');
 }
 
+// ─── Новые секции из обновлённого xlsx kandas_perso ─────────────────────────
+
+const KANDAS_LABELS_ANKETA = {
+  trip_purpose:       'Цель анкеты',
+  region:             'Область расселения',
+  district:           'Район расселения',
+  address:            'Адрес расселения',
+  contact_person_iin: 'ИИН контактного лица',
+  // Образование (из первой записи education[])
+  _edu_level:         'Уровень образования',
+  _edu_institution:   'Наименование уч. зав.',
+  _edu_beg:           'Начало обучения',
+  _edu_end:           'Окончание обучения',
+  _edu_specialty:     'Специальность',
+  _edu_degree:        'Ученая степень',
+  // Работа (из первой записи work_history[])
+  _work_country:      'Страна работы',
+  _work_city:         'Город работы',
+  _work_company:      'Название компании',
+  _work_post:         'Должность',
+  _work_beg:          'Начало работы',
+  _work_end:          'Окончание работы',
+};
+
+// Объединяет анкету с полями первой записи об образовании и работе —
+// для отображения в одной секции "Анкетные данные"
+function _buildAnketaExtended(extra) {
+  const a = { ...(extra.anketa || {}) };
+  const edu  = (extra.education    && extra.education[0])    || {};
+  const work = (extra.work_history && extra.work_history[0]) || {};
+  a._edu_level       = edu.level;
+  a._edu_institution = edu.institution;
+  a._edu_beg         = edu.beg_date;
+  a._edu_end         = edu.end_date;
+  a._edu_specialty   = edu.specialty;
+  a._edu_degree      = edu.degree;
+  a._work_country    = work.country;
+  a._work_city       = work.city;
+  a._work_company    = work.company;
+  a._work_post       = work.post;
+  a._work_beg        = work.beg_date;
+  a._work_end        = work.end_date;
+  return a;
+}
+const KANDAS_LABELS_STATUS = {
+  document_number: '№ удостоверения',
+  status_date:     'Дата получения статуса',
+  region:          'Область по заявке',
+  district:        'Район по заявке',
+  address:         'Адрес по заявке',
+  quota_number:    '№ разрешения по квоте',
+  quota_date:      'Дата квоты',
+};
+const KANDAS_LABELS_REG = {
+  kato_regname: 'Регион (KATO)',
+  kato_rainame: 'Район (KATO)',
+  city:         'Город',
+  street:       'Улица',
+  building:     'Дом',
+  flat:         'Квартира',
+};
+const KANDAS_LABELS_EDU = {
+  level:             'Уровень',
+  institution:       'Учебное заведение',
+  beg_date:          'Начало',
+  end_date:          'Окончание',
+  diploma_num:       '№ диплома',
+  specialty:         'Специальность',
+  degree:            'Учёная степень',
+  title:             'Описание научного труда',
+  specialnost_name:  'Специальность (полная)',
+  education_name_ru: 'Полное наименование',
+  status:            'Статус',
+};
+const KANDAS_LABELS_WORK = {
+  country:    'Страна',
+  city:       'Город',
+  company:    'Компания',
+  post:       'Должность',
+  beg_date:   'Начало',
+  end_date:   'Окончание',
+  experience: 'Опыт (лет)',
+};
+const KANDAS_LABELS_MIL = {
+  country:  'Страна службы',
+  branch:   'Род войск / должность',
+  beg_date: 'Начало службы',
+  end_date: 'Окончание службы',
+};
+const KANDAS_LABELS_LABOR_CONTRACT = {
+  org_bin:           'БИН организации',
+  org_name:          'Организация',
+  district:          'Регион работы',
+  work_place_kato:   'Местонахождение',
+  work_place:        'Адрес работы',
+  part_time:         'Тип занятости',
+  remote_work:       'Удалённость',
+  working_hours:     'Режим работы',
+  position_code:     'Код должности',
+  position_name:     'Должность по НКЗ',
+  established_post:  'Штатная должность',
+  contract_date:     'Дата контракта',
+  termination_date:  'Дата расторжения',
+};
+
+function _renderKVList(obj, labels, asTable) {
+  if (!obj) return '';
+  const parts = [];
+  for (const [k, label] of Object.entries(labels)) {
+    let v = obj[k];
+    if (v == null || v === '') continue;
+    v = _escapeHtml(String(v));
+    if (asTable) {
+      parts.push(`<tr><td style="color:#64748b;padding-right:8px;white-space:nowrap;vertical-align:top">${label}</td><td>${v}</td></tr>`);
+    } else {
+      parts.push(`<div><span style="color:#94a3b8;font-size:11px">${label}:</span> ${v}</div>`);
+    }
+  }
+  if (!parts.length) return '';
+  return asTable
+    ? `<table style="font-size:12px;border-collapse:collapse">${parts.join('')}</table>`
+    : parts.join('');
+}
+
+// Секция-аккордеон через нативный <details>. Первые 2 секции открыты, остальные свёрнуты.
+function _kandasSection(title, content, openByDefault) {
+  if (!content) return '';
+  return `<details ${openByDefault ? 'open' : ''} style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:6px">
+    <summary style="cursor:pointer;font-weight:700;color:#7c3aed;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;outline:none;user-select:none">
+      ${title}
+    </summary>
+    <div style="padding:0 10px 10px">${content}</div>
+  </details>`;
+}
+
+// Хелпер для рендера списочной секции (Образование/Работа/Служба) — возвращает только контент
+function _kandasListContent(list, labels, asTable) {
+  if (!list || !list.length) return '';
+  return list.map((item, i) => {
+    const content = _renderKVList(item, labels, asTable);
+    if (!content) return '';
+    const hdr = list.length > 1
+      ? `<div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">Запись ${i+1}</div>`
+      : '';
+    return `<div style="border-left:2px solid #c4b5fd;padding-left:8px;margin-bottom:6px">${hdr}${content}</div>`;
+  }).filter(Boolean).join('');
+}
+
+function _renderKandasDetails(extra, asTable) {
+  if (!extra) return '';
+  const sections = [];
+  const add = (title, content) => {
+    if (!content) return;
+    // первые 2 непустые секции открыты по умолчанию, остальные свёрнуты
+    sections.push(_kandasSection(title, content, sections.length < 2));
+  };
+  add('Анкетные данные',          _renderKVList(_buildAnketaExtended(extra), KANDAS_LABELS_ANKETA,  asTable));
+  add('Статус кандаса',           _renderKVList(extra.kandas_status,  KANDAS_LABELS_STATUS,         asTable));
+  add('Адрес регистрации',        _renderKVList(extra.reg_address,    KANDAS_LABELS_REG,            asTable));
+  add('Трудовой договор (ЕСУТД)', _renderKVList(extra.labor_contract, KANDAS_LABELS_LABOR_CONTRACT, asTable));
+  // Показываем секции "Образование (история)" и "Опыт работы (история)" ТОЛЬКО если записей > 1
+  // (первая запись уже отображена в "Анкетных данных").
+  if (extra.education?.length > 1) {
+    add('Образование (история)',  _kandasListContent(extra.education,    KANDAS_LABELS_EDU,  asTable));
+  }
+  if (extra.work_history?.length > 1) {
+    add('Опыт работы (история)',  _kandasListContent(extra.work_history, KANDAS_LABELS_WORK, asTable));
+  }
+  add('Воинская служба',          _kandasListContent(extra.military,     KANDAS_LABELS_MIL,  asTable));
+  if (!sections.length) return '';
+  // Адаптивный grid: на широких экранах 3+ колонки, на узких — авто-перенос.
+  // align-items:start чтобы свёрнутые <details> не растягивались до высоты раскрытых соседей.
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:8px;margin-top:10px;align-items:start">${sections.join('')}</div>`;
+}
+
 function buildKandasPopup(k) {
   const addr = [k.street, k.house, k.apt ? `кв.${k.apt}` : ''].filter(Boolean).join(', ');
   const loc  = [k.oblast, k.raion, k.city].filter(Boolean).join(', ');
   return `
-    <div style="font-size:13px">
+    <div style="font-size:13px;height:600px;overflow-y:scroll;padding-right:4px">
       <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:6px">
         ${k.has_photo ? `<img src="/api/kandas/${k.id}/photo" style="width:56px;height:70px;object-fit:cover;border-radius:4px;flex-shrink:0;border:1px solid #e2e8f0">` : ''}
         <div>
@@ -2115,10 +2316,11 @@ function buildKandasPopup(k) {
           </div>
         </div>
       </div>
-      ${loc  ? `<div style="margin-top:4px">${loc}</div>` : ''}
-      ${addr ? `<div>${addr}</div>` : ''}
+      ${loc  ? `<div style="margin-top:4px"><b>Адрес:</b> ${loc}</div>` : ''}
+      ${addr ? `<div>${loc ? '' : '<b>Адрес:</b> '}${addr}</div>` : ''}
       ${k.phone ? `<div>Тел: ${k.phone}</div>` : ''}
       ${_kandasExtraRows(k.extra, true)}
+      ${_renderKandasDetails(k.extra, true)}
       ${k.extra?.soc_portrait ? `
         <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
           <div style="font-weight:700;color:#7c3aed;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Анкета</div>
@@ -2186,6 +2388,7 @@ function renderKandasList() {
           ${addr ? `<div style="font-size:12px;margin-top:2px">${addr}</div>` : ''}
           ${k.phone ? `<div style="font-size:12px">Тел: ${k.phone}</div>` : ''}
           ${extraHtml ? `<div style="margin-top:6px;font-size:12px;line-height:1.7">${extraHtml}</div>` : ''}
+          <div style="font-size:12px;line-height:1.7">${_renderKandasDetails(k.extra, false)}</div>
           ${k.extra?.soc_portrait ? `
             <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
               <div style="font-weight:700;color:#7c3aed;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Анкета</div>
