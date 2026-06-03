@@ -498,6 +498,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <option value="Туркестанская обл.">Туркестанская обл.</option>
       <option value="Акмолинская обл.">Акмолинская обл.</option>
       <option value="Алматинская обл.">Алматинская обл.</option>
+      <option value="Абайская обл.">Абайская обл.</option>
+      <option value="Ұлытау обл.">Ұлытау обл.</option>
     </select>
   </div>
   <!-- Обычный режим: дома / люди -->
@@ -2044,6 +2046,19 @@ const REGION_ABBR_MAP = {
   'ЗКО': 'западно-казахстанская',
 };
 
+// Дополнительные подстроки (включая казахские) → значение из дропдауна.
+// Сравнение идёт по нижнему регистру и подстроке в kandas.oblast.
+const REGION_EXTRA_KEYS = {
+  'Абайская обл.':              ['абай'],                          // "Абай облысы" / "Абайская"
+  'Ұлытау обл.':                ['ұлытау', 'улытау', 'ulytau'],
+  'СКО':                        ['солтүстік қазақстан', 'солтустик'],
+  'ВКО':                        ['шығыс қазақстан', 'шыгыс казахстан'],
+  'ЗКО':                        ['батыс қазақстан', 'батыс казахстан'],
+  'Акмолинская обл.':           ['ақмола', 'акмола'],
+  'Костанайская обл.':          ['қостанай', 'костанай'],
+  'Павлодарская обл.':          ['павлодар'],
+};
+
 // Сопоставляет произвольное название региона со значением из дропдауна #goto-region
 function _matchRegionToDropdown(region, allRegions) {
   if (!region) return null;
@@ -2053,6 +2068,9 @@ function _matchRegionToDropdown(region, allRegions) {
     if (rLower === regionLower) return true;
     // Аббревиатуры СКО/ВКО/ЗКО
     if (REGION_ABBR_MAP[r] && regionLower.includes(REGION_ABBR_MAP[r])) return true;
+    // Доп. ключи (казахские названия и пр.)
+    const extras = REGION_EXTRA_KEYS[r];
+    if (extras && extras.some(k => regionLower.includes(k))) return true;
     // Убираем " обл." и сравниваем по вхождению
     const rStripped = rLower.replace(' обл.', '');
     if (regionLower.includes(rStripped)) return true;
