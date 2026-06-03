@@ -1014,6 +1014,14 @@ function startApp() {
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-kandas-info').style.display = 'block';
     document.getElementById('st-normal-info').style.display = 'none';
+    // В дропдауне "Перейти к области" гасим неактивные опции
+    document.querySelectorAll('#goto-region option[value]:not([value=""])').forEach(opt => {
+      if (!_isKandasActiveOblastName(opt.value)) {
+        opt.disabled = true;
+        opt.style.color = '#cbd5e1';
+        opt.textContent = opt.textContent + ' (недоступно)';
+      }
+    });
   } else if (isCossuRole()) {
     // ── Режим ЦОССУ: тоже скрываем всё кроме списка ЦОССУ и границ ──
     ['cats', 'dists', 'conf', 'clust'].forEach(id => {
@@ -1346,6 +1354,47 @@ function _distColor(name) {
   return DIST_PALETTE[Math.abs(h) % DIST_PALETTE.length];
 }
 
+// ── Список активных областей для режима кандасов ────────────────────────────
+// В неактивных областях границы серые и не кликабельны, как и их районы.
+const KANDAS_ACTIVE_REGION_KEYS = [
+  'акмолинская',
+  'восточно-казахстанская', 'вко',
+  'костанайская',
+  'павлодарская',
+  'северо-казахстанская', 'ско',
+  'абай',
+  'ұлытау', 'улытау', 'ulytau',
+];
+
+function _isKandasActiveOblastName(name) {
+  if (!name) return false;
+  const n = String(name).toLowerCase();
+  return KANDAS_ACTIVE_REGION_KEYS.some(k => n.includes(k) || k.includes(n));
+}
+
+// Кэш bbox активных областей (для определения активности районов L68)
+let _kandasActiveOblastBboxes = null;
+
+async function _getKandasActiveOblastBboxes() {
+  if (_kandasActiveOblastBboxes) return _kandasActiveOblastBboxes;
+  const l4 = await _getL4();
+  _kandasActiveOblastBboxes = (l4.features || [])
+    .filter(f => _isKandasActiveOblastName(f.properties?.name))
+    .map(f => f.properties?.bbox)
+    .filter(Boolean);
+  return _kandasActiveOblastBboxes;
+}
+
+// Активен ли L68-район: его центроид попадает в bbox активной области
+function _isKandasActiveRaion(feature) {
+  if (!_kandasActiveOblastBboxes) return true;     // ещё не загружен — не блокируем
+  const bb = feature.properties?.bbox;
+  if (!bb) return false;
+  const cx = (bb[0] + bb[2]) / 2;
+  const cy = (bb[1] + bb[3]) / 2;
+  return _kandasActiveOblastBboxes.some(([W, S, E, N]) => cx >= W && cx <= E && cy >= S && cy <= N);
+}
+
 // Порог зума: ниже — показываем области (admin_level=4), выше — районы (6/8)
 const DIST_ZOOM_THRESHOLD = 8;
 
@@ -1412,6 +1461,11 @@ async function fetchDistricts() {
   // Загружаем нужный файл (маленький L4 или большой L68)
   const geojson = await (showOblast ? _getL4() : _getL68());
 
+  // Для кандас-режима подгружаем bbox активных областей (нужны для проверки L68 районов)
+  if (isKandasRole()) {
+    await _getKandasActiveOblastBboxes();
+  }
+
   // Быстрая фильтрация по viewport через pre-computed bbox из properties
   const b = map.getBounds().pad(0.3);
   const bW = b.getWest(), bS = b.getSouth(), bE = b.getEast(), bN = b.getNorth();
@@ -1438,18 +1492,43 @@ async function fetchDistricts() {
 
   const legendItems = [];
 
+  // Для кандас-режима определяем активность каждого объекта (область или район)
+  const kandasMode = isKandasRole();
+  const isFeatureActive = (feature) => {
+    if (!kandasMode) return true;
+    if (showOblast) return _isKandasActiveOblastName(feature.properties?.name);
+    return _isKandasActiveRaion(feature);
+  };
+
   districtsLayer = L.geoJSON({type:'FeatureCollection', features: polys}, {
     style(feature) {
       const name = feature.properties?.name || '?';
-      const col  = _distColor(name);
+      const active = isFeatureActive(feature);
+      // Неактивные (только в режиме кандасов) — серые
+      const col  = active ? _distColor(name) : '#94a3b8';
       if (showOblast) {
-        return { color: col, weight: 3, fillColor: col, fillOpacity: 0.07, opacity: 0.9, dashArray: '8 5' };
+        return active
+          ? { color: col, weight: 3, fillColor: col, fillOpacity: 0.07, opacity: 0.9, dashArray: '8 5' }
+          : { color: '#cbd5e1', weight: 2, fillColor: '#cbd5e1', fillOpacity: 0.18, opacity: 0.5, dashArray: '4 4' };
       }
-      return { color: col, weight: 1.5, fillColor: col, fillOpacity: 0.15, opacity: 0.8 };
+      return active
+        ? { color: col, weight: 1.5, fillColor: col, fillOpacity: 0.15, opacity: 0.8 }
+        : { color: '#cbd5e1', weight: 1, fillColor: '#cbd5e1', fillOpacity: 0.22, opacity: 0.5 };
     },
     onEachFeature(feature, layer) {
       const name = feature.properties?.name || '—';
       const col  = _distColor(name);
+      const active = isFeatureActive(feature);
+      // Для неактивных в кандас-режиме: ни тултипа, ни клика, курсор обычный
+      if (!active) {
+        layer.on('add', () => {
+          if (layer._path) {
+            layer._path.style.cursor = 'default';
+            layer._path.style.pointerEvents = 'none';   // блокируем мышиные события
+          }
+        });
+        return;
+      }
       const label = showOblast
         ? `<b style="font-size:14px">${name}</b><br><span style="font-size:11px;color:#64748b">Область / регион</span>`
         : `<b style="font-size:13px">${name}</b>`;
@@ -1987,16 +2066,16 @@ function updateKandasStats() {
   // Кандасы без координат
   const unknownCount = kandasData.filter(k => k.lat == null || k.lon == null).length;
 
-  // Все регионы из дропдауна
+  // Все регионы из дропдауна — для кандасов оставляем ТОЛЬКО активные области
   const allRegions = Array.from(
     document.querySelectorAll('#goto-region option[value]:not([value=""])')
-  ).map(o => o.value);
-  // Подсчёт кандасов по полю oblast
+  ).map(o => o.value).filter(r => _isKandasActiveOblastName(r));
+  // Подсчёт кандасов по полю oblast (только в активных областях)
   const counts = {};
   for (const r of allRegions) counts[r] = 0;
   for (const k of kandasData) {
     const matched = _matchRegionToDropdown(k.oblast, allRegions);
-    if (!matched) continue;
+    if (!matched || !counts.hasOwnProperty(matched)) continue;
     counts[matched] = (counts[matched] || 0) + 1;
   }
   // Сортировка: сначала с кандасами (> 0), потом нулевые
