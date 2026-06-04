@@ -2038,7 +2038,12 @@ async function loadKandasLayer() {
     marker.bindPopup(buildKandasPopup(k), { maxWidth: 900, minWidth: 600 });
     marker._kandasData = k;
     // Показывать/скрывать маркер работы при открытии/закрытии попапа
-    marker.on('popupopen',  () => _showWorkMarker(k));
+    // + делаем попап перетаскиваемым по экрану (как у ЦОССУ)
+    marker.on('popupopen',  (e) => {
+      _showWorkMarker(k);
+      const el = e.popup.getElement();
+      if (el) _makePopupDraggable(el);
+    });
     marker.on('popupclose', () => _hideWorkMarker());
     kandasLayer.addLayer(marker);
   }
