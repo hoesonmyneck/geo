@@ -1387,8 +1387,17 @@ async function _getKandasActiveOblastBboxes() {
   return _kandasActiveOblastBboxes;
 }
 
+// Отдельные районы внутри активных областей, которые надо погасить вручную
+// (например пригороды Астаны в Акмолинской области).
+const KANDAS_INACTIVE_RAION_NAMES = new Set([
+  'Целиноградский район',
+  'Аршалынский район',
+  'Косшы Г.А.',
+]);
+
 // Активен ли L68-район: его центроид попадает в bbox активной области,
-// но НЕ относится к городу Астане (она как регион выключена).
+// но НЕ относится к городу Астане (она как регион выключена) и не входит
+// в ручной чёрный список районов.
 // Районы Астаны патч-источником помечены id_reg=71 / region="г.Астана"
 // (см. patch_astana_districts.py) — это надёжнее bbox, т.к. Астана —
 // анклав внутри активной Акмолинской области.
@@ -1397,6 +1406,7 @@ function _isKandasActiveRaion(feature) {
   const props = feature.properties || {};
   if (Number(props.id_reg) === 71) return false;
   if (String(props.region || '').includes('Астана')) return false;
+  if (KANDAS_INACTIVE_RAION_NAMES.has(String(props.name || '').trim())) return false;
   const bb = props.bbox;
   if (!bb) return false;
   const cx = (bb[0] + bb[2]) / 2;
