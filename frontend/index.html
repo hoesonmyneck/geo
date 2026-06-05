@@ -2140,7 +2140,7 @@ function updateKandasStats() {
 // Единый маппинг меток и порядок отображения полей extra для кандасов
 const KANDAS_FIELD_ORDER = [
   // Простые поля из нового xlsx
-  'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz',
+  'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz', 'polyclinic',
   // Легаси-поля (старые kandas)
   'bin_work',    'work_org',    'work_address', 'position',
   'staff_pos',   'work_type',   'specialty',
@@ -2155,6 +2155,7 @@ const KANDAS_FIELD_LABELS = {
   avto:        'Авто',
   nedv:        'Недвижимость',
   smz:         'СМЗ (сумма ₸)',
+  polyclinic:  'Лиц прикреплено к поликлинике',
   // Легаси
   bin_work:    'БИН работодателя',
   work_org:    'Название организации',

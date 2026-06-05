@@ -35,14 +35,24 @@ from app.db.session import AsyncSessionLocal
 from app.db.models import Kandas
 
 
-# Колонка с английским кодом → имя поля (row 3 в xlsx)
+# Колонка с английским кодом → имя поля.
+# Строка с кодами определяется автоматически (по наличию IIN+APP_ID),
+# т.к. в разных выгрузках шапка занимает 2 или 3 строки.
 def _read_xlsx(path: Path) -> list[dict]:
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
-    # headers с row 3 (английские коды)
-    headers = {col: ws.cell(3, col).value for col in range(2, ws.max_column + 1) if ws.cell(3, col).value}
+    # Ищем строку английских кодов среди первых 5 строк
+    hdr_row = None
+    for r in range(1, 6):
+        vals = {str(ws.cell(r, c).value).strip() for c in range(1, ws.max_column + 1) if ws.cell(r, c).value}
+        if "IIN" in vals and "APP_ID" in vals:
+            hdr_row = r
+            break
+    if hdr_row is None:
+        raise ValueError("Не нашёл строку английских кодов (IIN/APP_ID) в первых 5 строках")
+    headers = {col: ws.cell(hdr_row, col).value for col in range(2, ws.max_column + 1) if ws.cell(hdr_row, col).value}
     rows: list[dict] = []
-    for r in range(4, ws.max_row + 1):
+    for r in range(hdr_row + 1, ws.max_row + 1):
         d: dict = {}
         for col, name in headers.items():
             val = ws.cell(r, col).value
@@ -254,6 +264,8 @@ def _build_main_kandas(rows: list[dict], family: list[dict]) -> dict:
         "smz":             base.get("SMZ"),
         "sdu":             _s(base.get("SDU")),
         "cks_cat":         _s(base.get("SDU")),  # дублируем как cks_cat (legacy display)
+        # Кол-во лиц, прикреплённых к поликлинике (новая колонка)
+        "polyclinic":      base.get("прикрепление к поликлиннике"),
     }
     # Адрес проживания — используем KANDAS_REGION/DISTRICT + REG_ADDRESS
     oblast = _s(base.get("KANDAS_REGION"))
