@@ -2740,6 +2740,8 @@ let cossuQueueFilter = new Set();
 // Слой линий до ближайших ЦОССУ без очереди + участники текущих линий (origin + назначения)
 let cossuLinesLayer = null;
 let _cossuLineMembers = new Set();
+// Режим сопоставления линий: 'type' (по типу, стандарт) или 'subtype' (по подтипу)
+let cossuLineMode = 'type';
 // Слой радиусов вокруг выбранной точки + флаг включения
 let cossuRadiusLayer = null;
 let cossuShowRadius = false;
@@ -2887,7 +2889,9 @@ function _renderCossuLayer() {
     if (inst.lat == null || inst.lon == null) continue;
     if (!_cossuPassesFilters(inst)) continue;
     const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
-    marker.bindPopup(_cossuMapPopup(inst), { maxWidth: 320 });
+    // Функция-попап: HTML генерится при каждом открытии, чтобы тумблер
+    // отражал актуальный cossuLineMode
+    marker.bindPopup(() => _cossuMapPopup(inst), { maxWidth: 320 });
     // Клик по точке: линии к ближайшим без очереди + радиусы (если включены)
     marker.on('click', () => {
       _drawCossuQueueLines(inst);
@@ -2903,26 +2907,30 @@ function _renderCossuLayer() {
   map.addLayer(cossuLayer);
 }
 
-// Рисует линии от учреждения с очередью к 3 ближайшим того же типа без очереди
-function _drawCossuQueueLines(inst) {
+// Рисует линии от учреждения с очередью к 3 ближайшим без очереди.
+// Сопоставление по типу (cossuLineMode='type') или подтипу ('subtype').
+// force=true — принудительная перерисовка (при переключении режима тумблером).
+function _drawCossuQueueLines(inst, force = false) {
   // Если кликнули по участнику текущих линий (точка-источник или одна из назначений)
-  // — оставляем линии как есть, не сбрасываем.
-  if (cossuLinesLayer && inst && _cossuLineMembers.has(inst.org_bin)) return;
+  // — оставляем линии как есть, не сбрасываем. При force игнорируем это правило.
+  if (!force && cossuLinesLayer && inst && _cossuLineMembers.has(inst.org_bin)) return;
 
   if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
   _cossuLineMembers.clear();
   if (!inst || (inst.total_queue_count || 0) <= 0) return;   // только для тех где есть очередь
   if (inst.lat == null || inst.lon == null) return;
 
-  const myTypes = new Set(inst.types || []);
+  // Поле сопоставления зависит от режима
+  const fieldOf = (c) => cossuLineMode === 'subtype' ? (c.subtypes || []) : (c.types || []);
+  const mySet = new Set(fieldOf(inst));
   const origin = L.latLng(inst.lat, inst.lon);
 
-  // Кандидаты: другое учреждение, есть координаты, очередь == 0, общий тип
+  // Кандидаты: другое учреждение, есть координаты, очередь == 0, общий тип/подтип
   const candidates = cossuData.filter(c =>
     c.org_bin !== inst.org_bin &&
     c.lat != null && c.lon != null &&
     (c.total_queue_count || 0) === 0 &&
-    (c.types || []).some(t => myTypes.has(t))
+    fieldOf(c).some(t => mySet.has(t))
   );
   candidates.sort((a, b) =>
     origin.distanceTo(L.latLng(a.lat, a.lon)) - origin.distanceTo(L.latLng(b.lat, b.lon))
@@ -2947,6 +2955,13 @@ function _drawCossuQueueLines(inst) {
     cossuLinesLayer.addLayer(line);
   }
   map.addLayer(cossuLinesLayer);
+}
+
+// Переключение режима линий (тип ↔ подтип) из попапа + перерисовка для inst
+function _setCossuLineMode(useSubtype, org_bin) {
+  cossuLineMode = useSubtype ? 'subtype' : 'type';
+  const inst = cossuData.find(c => c.org_bin === org_bin);
+  if (inst) _drawCossuQueueLines(inst, true);   // force — перерисовать с новым режимом
 }
 
 // Чекбоксы фильтра типов в сайдбаре → перерисовка слоя карты
@@ -2991,6 +3006,14 @@ function _cossuMapPopup(inst) {
     </div>
     ${types ? `<div style="margin-top:4px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Тип:</span><br>${types}</div>` : ''}
     ${subtypes ? `<div style="margin-top:6px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Подтип:</span><br>${subtypes}</div>` : ''}
+    ${(inst.total_queue_count || 0) > 0 ? `
+      <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#475569;cursor:pointer">
+          <input type="checkbox" onchange="_setCossuLineMode(this.checked, '${_escapeHtml(inst.org_bin)}')" ${cossuLineMode === 'subtype' ? 'checked' : ''}>
+          Линии по подтипу <span style="color:#94a3b8">(по умолчанию — по типу)</span>
+        </label>
+      </div>
+    ` : ''}
   </div>`;
 }
 
