@@ -149,7 +149,9 @@ async def main():
             log.info("(DRY RUN — БД не меняется)")
 
         ok = miss = 0
-        async with httpx.AsyncClient(headers={"User-Agent": "geo-cossu/1.0"}) as client:
+        # verify=False — в backend-контейнере нет системного CA bundle
+        # (SSL: CERTIFICATE_VERIFY_FAILED). 2GIS — публичный геокод-API, риск MITM минимален.
+        async with httpx.AsyncClient(headers={"User-Agent": "geo-cossu/1.0"}, verify=False) as client:
             for i, row in enumerate(rows, 1):
                 addr = _build_query(row)
                 if not addr:
