@@ -2877,34 +2877,44 @@ function _cossuPassesFilters(inst) {
   return true;
 }
 
-function _renderCossuLayer() {
-  if (!map) return;
+// Создаёт маркер ЦОССУ (попап, клик-линии, перетаскивание) — общая фабрика
+function _makeCossuMarker(inst) {
+  const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
+  // Функция-попап: HTML генерится при каждом открытии (актуальный cossuLineMode)
+  marker.bindPopup(() => _cossuMapPopup(inst), { maxWidth: 320 });
+  // Клик по точке: линии к ближайшим без очереди + радиусы
+  marker.on('click', () => {
+    _drawCossuQueueLines(inst);
+    _drawCossuRadius(inst);
+  });
+  marker.on('popupopen', (e) => {
+    const el = e.popup.getElement();
+    if (el) _makePopupDraggable(el);
+  });
+  return marker;
+}
+
+// Перерисовывает только слой точек (без трогания линий/радиусов).
+// Точка видна если проходит фильтр ИЛИ является участником текущих линий
+// (источник/назначение) — чтобы линии не вели к скрытым фильтром точкам.
+function _renderCossuMarkers() {
   if (cossuLayer) { map.removeLayer(cossuLayer); cossuLayer = null; }
-  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; _cossuLineMembers.clear(); }
-  if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
   if (_cossuMarkersHidden) return;          // точки скрыты галочкой
   if (!cossuData || !cossuData.length) return;
   cossuLayer = L.layerGroup();
   for (const inst of cossuData) {
     if (inst.lat == null || inst.lon == null) continue;
-    if (!_cossuPassesFilters(inst)) continue;
-    const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
-    // Функция-попап: HTML генерится при каждом открытии, чтобы тумблер
-    // отражал актуальный cossuLineMode
-    marker.bindPopup(() => _cossuMapPopup(inst), { maxWidth: 320 });
-    // Клик по точке: линии к ближайшим без очереди + радиусы (если включены)
-    marker.on('click', () => {
-      _drawCossuQueueLines(inst);
-      _drawCossuRadius(inst);
-    });
-    // Делаем попап перетаскиваемым по экрану
-    marker.on('popupopen', (e) => {
-      const el = e.popup.getElement();
-      if (el) _makePopupDraggable(el);
-    });
-    cossuLayer.addLayer(marker);
+    if (!_cossuPassesFilters(inst) && !_cossuLineMembers.has(inst.org_bin)) continue;
+    cossuLayer.addLayer(_makeCossuMarker(inst));
   }
   map.addLayer(cossuLayer);
+}
+
+function _renderCossuLayer() {
+  if (!map) return;
+  if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; _cossuLineMembers.clear(); }
+  if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
+  _renderCossuMarkers();
 }
 
 // Рисует линии от учреждения с очередью к 3 ближайшим без очереди.
@@ -2915,10 +2925,14 @@ function _drawCossuQueueLines(inst, force = false) {
   // — оставляем линии как есть, не сбрасываем. При force игнорируем это правило.
   if (!force && cossuLinesLayer && inst && _cossuLineMembers.has(inst.org_bin)) return;
 
+  const hadLines = !!cossuLinesLayer;
   if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; }
   _cossuLineMembers.clear();
-  if (!inst || (inst.total_queue_count || 0) <= 0) return;   // только для тех где есть очередь
-  if (inst.lat == null || inst.lon == null) return;
+  // Если сбрасываем линии — перерисуем точки, чтобы убрать ранее force-показанные
+  // назначения (иначе они останутся видимыми поверх фильтра).
+  const _resetMarkers = () => { if (hadLines) _renderCossuMarkers(); };
+  if (!inst || (inst.total_queue_count || 0) <= 0) { _resetMarkers(); return; }  // только с очередью
+  if (inst.lat == null || inst.lon == null) { _resetMarkers(); return; }
 
   // Поле сопоставления зависит от режима
   const fieldOf = (c) => cossuLineMode === 'subtype' ? (c.subtypes || []) : (c.types || []);
@@ -2937,12 +2951,18 @@ function _drawCossuQueueLines(inst, force = false) {
   );
   const nearest = candidates.slice(0, 3);
 
-  if (!nearest.length) return;
+  if (!nearest.length) { _resetMarkers(); return; }
+
+  // Наполняем список участников линий ДО перерисовки точек
+  _cossuLineMembers.add(inst.org_bin);          // источник
+  for (const c of nearest) _cossuLineMembers.add(c.org_bin);   // назначения
+
+  // Перерисовываем точки: назначения, скрытые фильтром очереди, станут видимыми
+  // (в _renderCossuMarkers участники линий показываются вне зависимости от фильтра)
+  _renderCossuMarkers();
 
   cossuLinesLayer = L.layerGroup();
-  _cossuLineMembers.add(inst.org_bin);          // источник
   for (const c of nearest) {
-    _cossuLineMembers.add(c.org_bin);           // назначение
     const dist = origin.distanceTo(L.latLng(c.lat, c.lon)); // метры
     const distKm = dist >= 1000 ? `${(dist / 1000).toFixed(1)} км` : `${Math.round(dist)} м`;
     const line = L.polyline([[inst.lat, inst.lon], [c.lat, c.lon]], {

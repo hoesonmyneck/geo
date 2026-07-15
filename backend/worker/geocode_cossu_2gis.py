@@ -66,6 +66,17 @@ async def geocode_one(client: httpx.AsyncClient, key: str, address: str) -> tupl
 
         if r.status_code == 200:
             data = r.json()
+            # 2GIS маскирует ошибки под HTTP 200 — реальный код в meta.code
+            meta = data.get("meta") or {}
+            mcode = meta.get("code")
+            if mcode == 403:
+                msg = ((meta.get("error") or {}).get("message")) or "forbidden"
+                log.error(f"  meta 403: {msg}. Ключ невалиден/исчерпан. Останавливаюсь.")
+                raise SystemExit(1)
+            if mcode == 429:
+                log.warning("  meta 429 Too Many Requests, жду 5 сек...")
+                await asyncio.sleep(5)
+                continue
             items = (data.get("result") or {}).get("items") or []
             if not items:
                 return None
