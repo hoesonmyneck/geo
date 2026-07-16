@@ -403,6 +403,21 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     </div>
   </div>
 
+  <!-- Секция фильтра по собственности ЦОССУ (видна только cossu-роли) -->
+  <div id="cossu-sobst-head" class="s-head" style="display:none">
+    Собственность
+  </div>
+  <div id="cossu-sobst-body" class="s-body" style="display:none">
+    <div class="cat-hint">Гос — круглые точки, частные — квадратные</div>
+    <label class="cat-item"><input type="checkbox" class="cossu-sobst-chk" value="gov">
+      <span class="dot" style="background:#0891b2;border-radius:50%"></span>Государственные</label>
+    <label class="cat-item"><input type="checkbox" class="cossu-sobst-chk" value="priv">
+      <span class="dot" style="background:#0891b2;border-radius:2px"></span>Частные</label>
+    <div style="margin-top:6px">
+      <span class="clear-link" onclick="clearCossuSobstFilter()">Сбросить</span>
+    </div>
+  </div>
+
   <!-- 2. Категории жителей -->
   <div class="s-head" onclick="toggleSection('cats')">
     Категории жителей <span id="cats-arr">&#9660;</span>
@@ -532,6 +547,10 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#22c55e;margin-right:7px;vertical-align:middle"></span>Уход на дому</div>
   <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#a855f7;margin-right:7px;vertical-align:middle"></span>Временное пребывание</div>
   <div style="margin-top:4px;font-size:10px;color:#94a3b8">Делёный круг = несколько типов</div>
+  <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:12px;align-items:center">
+    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#64748b"></span>гос</span>
+    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#64748b"></span>частн</span>
+  </div>
 </div>
 
 <!-- Подсказка режима выбора на карте -->
@@ -695,6 +714,12 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
         <option value="ЦОССУ В УСЛОВИЯХ ПОЛУСТАЦИОНАРА">Полустационар</option>
         <option value="ЦОССУ В УСЛОВИЯХ УХОДА НА ДОМУ">Уход на дому</option>
         <option value="ЦОССУ В УСЛОВИЯХ ВРЕМЕННОГО ПРЕБЫВАНИЯ">Временное пребывание</option>
+      </select>
+      <select id="cossu-filter-sobst" onchange="renderCossuList()"
+        style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+        <option value="">Все (собственность)</option>
+        <option value="gov">Государственные</option>
+        <option value="priv">Частные</option>
       </select>
       <select id="cossu-filter-coords" onchange="renderCossuList()"
         style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
@@ -1049,6 +1074,8 @@ function startApp() {
     document.getElementById('cossu-types-body').style.display = '';
     document.getElementById('cossu-queue-head').style.display = '';
     document.getElementById('cossu-queue-body').style.display = '';
+    document.getElementById('cossu-sobst-head').style.display = '';
+    document.getElementById('cossu-sobst-body').style.display = '';
     document.getElementById('cossu-legend').style.display = 'block';
   } else {
     // ── Обычный режим: скрыть кнопки Кандасы / ЦОССУ и линзу ──
@@ -2737,6 +2764,13 @@ function _cossuFree(koika, residents) {
 let cossuTypeFilter = new Set();
 // Активный фильтр по очереди: 'none' / 'has' (пусто = все)
 let cossuQueueFilter = new Set();
+// Активный фильтр по собственности: 'gov' / 'priv' (пусто = все)
+let cossuSobstFilter = new Set();
+
+// Частная собственность? (sobst содержит "частн"). Иначе — государственная.
+function _cossuIsPrivate(inst) {
+  return /частн/i.test(inst.sobst || '');
+}
 // Слой линий до ближайших ЦОССУ без очереди + участники текущих линий (origin + назначения)
 let cossuLinesLayer = null;
 let _cossuLineMembers = new Set();
@@ -2793,20 +2827,22 @@ function _cossuColors(types) {
   return cols.length ? cols : ['#94a3b8'];
 }
 
-function _cossuMarkerIcon(types) {
+function _cossuMarkerIcon(types, isPrivate) {
   const cols = _cossuColors(types);
   let bg;
   if (cols.length === 1) {
     bg = cols[0];
   } else {
-    // Делим круг на равные сектора по числу типов
+    // Делим на равные сектора по числу типов
     const seg = 360 / cols.length;
     const stops = cols.map((c, i) => `${c} ${i * seg}deg ${(i + 1) * seg}deg`).join(', ');
     bg = `conic-gradient(${stops})`;
   }
+  // Гос — круг (border-radius 50%), частный — квадрат (небольшое скругление)
+  const radius = isPrivate ? '3px' : '50%';
   return L.divIcon({
     className: '',
-    html: `<div style="width:26px;height:26px;border-radius:50%;background:${bg};border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
+    html: `<div style="width:26px;height:26px;border-radius:${radius};background:${bg};border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
     popupAnchor: [0, -14],
@@ -2857,6 +2893,11 @@ function _cossuPassesFilters(inst) {
   if (cossuTypeFilter.size > 0) {
     if (!(inst.types || []).some(t => cossuTypeFilter.has(t))) return false;
   }
+  // Фильтр по собственности (гос/частный)
+  if (cossuSobstFilter.size > 0) {
+    const key = _cossuIsPrivate(inst) ? 'priv' : 'gov';
+    if (!cossuSobstFilter.has(key)) return false;
+  }
   // Фильтр по очереди (OR-логика между выбранными опциями)
   if (cossuQueueFilter.size > 0) {
     const queue     = inst.total_queue_count || 0;
@@ -2879,7 +2920,7 @@ function _cossuPassesFilters(inst) {
 
 // Создаёт маркер ЦОССУ (попап, клик-линии, перетаскивание) — общая фабрика
 function _makeCossuMarker(inst) {
-  const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types) });
+  const marker = L.marker([inst.lat, inst.lon], { icon: _cossuMarkerIcon(inst.types, _cossuIsPrivate(inst)) });
   // Функция-попап: HTML генерится при каждом открытии (актуальный cossuLineMode)
   marker.bindPopup(() => _cossuMapPopup(inst), { maxWidth: 320 });
   // Клик по точке: линии к ближайшим без очереди + радиусы
@@ -2995,12 +3036,22 @@ document.addEventListener('change', e => {
     cossuQueueFilter.clear();
     document.querySelectorAll('.cossu-queue-chk:checked').forEach(cb => cossuQueueFilter.add(cb.value));
     _renderCossuLayer();
+  } else if (e.target.classList.contains('cossu-sobst-chk')) {
+    cossuSobstFilter.clear();
+    document.querySelectorAll('.cossu-sobst-chk:checked').forEach(cb => cossuSobstFilter.add(cb.value));
+    _renderCossuLayer();
   }
 });
 
 function clearCossuTypeFilter() {
   document.querySelectorAll('.cossu-type-chk').forEach(cb => cb.checked = false);
   cossuTypeFilter.clear();
+  _renderCossuLayer();
+}
+
+function clearCossuSobstFilter() {
+  document.querySelectorAll('.cossu-sobst-chk').forEach(cb => cb.checked = false);
+  cossuSobstFilter.clear();
   _renderCossuLayer();
 }
 
@@ -3017,6 +3068,13 @@ function _cossuMapPopup(inst) {
   return `<div style="font-size:13px;min-width:240px">
     <div style="font-weight:700;color:#0e7490;line-height:1.3;margin-bottom:4px">${_escapeHtml(inst.org_name || '—')}</div>
     <div style="font-size:11px;color:#64748b;margin-bottom:6px">БИН: ${_escapeHtml(inst.org_bin)} · ${branches.length} отд.</div>
+    <div style="margin-bottom:6px">
+      <span style="display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:8px;${
+        _cossuIsPrivate(inst)
+          ? 'background:#fef3c7;color:#92400e'
+          : 'background:#dbeafe;color:#1e40af'
+      }">${_cossuIsPrivate(inst) ? 'Частная' : 'Государственная'}</span>
+    </div>
     ${inst.fulladdress ? `<div style="font-size:12px;margin-bottom:6px">${_escapeHtml(inst.fulladdress)}</div>` : ''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:11px"><b>${inst.total_fakt_koika_mesto || 0}</b> койко-мест</span>
@@ -3258,6 +3316,7 @@ function renderCossuList() {
   }
   const q = (document.getElementById('cossu-search')?.value || '').trim().toLowerCase();
   const typeFilter   = document.getElementById('cossu-filter-type')?.value || '';
+  const sobstFilter  = document.getElementById('cossu-filter-sobst')?.value || '';
   const coordsFilter = document.getElementById('cossu-filter-coords')?.value || '';
 
   const filtered = cossuData.filter(inst => {
@@ -3268,6 +3327,11 @@ function renderCossuList() {
     }
     // Фильтр по типу
     if (typeFilter && !(inst.types || []).includes(typeFilter)) return false;
+    // Фильтр по собственности
+    if (sobstFilter) {
+      const key = _cossuIsPrivate(inst) ? 'priv' : 'gov';
+      if (key !== sobstFilter) return false;
+    }
     // Фильтр по наличию координат
     const hasCoords = inst.lat != null && inst.lon != null;
     if (coordsFilter === 'with' && !hasCoords) return false;
