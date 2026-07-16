@@ -50,7 +50,9 @@ def _read_xlsx(path: Path) -> list[dict]:
             break
     if hdr_row is None:
         raise ValueError("Не нашёл строку английских кодов (IIN/APP_ID) в первых 5 строках")
-    headers = {col: ws.cell(hdr_row, col).value for col in range(2, ws.max_column + 1) if ws.cell(hdr_row, col).value}
+    # Читаем с col1: в разных выгрузках APP_ID бывает в 1-й колонке (без ведущего
+    # пустого столбца) или во 2-й. Пустой ведущий столбец даст безвредный ключ.
+    headers = {col: ws.cell(hdr_row, col).value for col in range(1, ws.max_column + 1) if ws.cell(hdr_row, col).value}
     rows: list[dict] = []
     for r in range(hdr_row + 1, ws.max_row + 1):
         d: dict = {}
