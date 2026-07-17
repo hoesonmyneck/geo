@@ -298,6 +298,117 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   color:#fff; border:none; border-radius:5px; cursor:pointer; font-size:12px; font-weight:600;
 }
 .geo-popup .edit-btn:hover { background:#2563eb; }
+
+/* Вкладки в модалке статистики ЦОССУ */
+.cossu-stats-tab {
+  background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;
+  padding:9px 14px; font-size:13px; font-weight:500; color:#64748b; font-family:inherit;
+  transition:color .2s ease, border-color .2s ease;
+}
+.cossu-stats-tab:hover { color:#0e7490; }
+.cossu-stats-tab:focus-visible { outline:2px solid #0891b2; outline-offset:-2px; border-radius:4px 4px 0 0; }
+.cossu-stats-tab.active { color:#0e7490; border-bottom-color:#0891b2; font-weight:600; }
+
+/* Сводка ЦОССУ: числа выравниваются по разрядам, иначе колонки «пляшут» */
+#cossu-stats-body { font-variant-numeric:tabular-nums; }
+
+/* Карточка-секция сводки. Тень тонирована в slate, а не чёрная. */
+.cossu-card {
+  border:1px solid #e2e8f0; border-radius:10px; margin-bottom:12px; overflow:hidden;
+  background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+.cossu-card > h4 {
+  margin:0; padding:9px 12px; background:#f8fafc; border-bottom:1px solid #f1f5f9;
+  color:#0f172a; font-weight:600; font-size:13px;
+}
+.cossu-card > h4 .cnt { color:#94a3b8; font-weight:500; }
+
+/* Плитка числа. Без рамки — рамка уже у карточки, вложенные рамки дают «коробку в коробке». */
+.cossu-tile { border-radius:6px; padding:10px 11px; background:#f8fafc; }
+.cossu-tile .v {
+  font-size:20px; font-weight:600; color:#0f172a; line-height:1.1; letter-spacing:-.02em;
+}
+.cossu-tile .l { font-size:11px; color:#475569; margin-top:3px; text-wrap:pretty; }
+.cossu-tile .s { font-size:10px; color:#94a3b8; margin-top:1px; text-wrap:pretty; }
+
+/* Таблицы сводки */
+.cossu-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.cossu-tbl th {
+  text-align:right; padding:6px 8px; font-size:10px; font-weight:500; color:#64748b;
+  text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid #e2e8f0; white-space:nowrap;
+}
+.cossu-tbl th:first-child, .cossu-tbl td:first-child { text-align:left; padding-left:12px; }
+.cossu-tbl th:last-child, .cossu-tbl td:last-child { padding-right:12px; }
+.cossu-tbl td { text-align:right; padding:6px 8px; color:#374151; }
+.cossu-tbl tbody tr { transition:background .15s ease; }
+.cossu-tbl tbody tr:hover { background:#f8fafc; }
+.cossu-tbl tbody tr + tr { border-top:1px solid #f1f5f9; }
+/* Цветовая точка типа — и в таблицах, и в подписях диаграмм */
+.cossu-card .dot {
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  margin-right:7px; vertical-align:baseline;
+}
+.cossu-note { font-size:10px; color:#94a3b8; margin-top:8px; padding:0 12px 2px; text-wrap:pretty; }
+
+/* ── Диаграммы сводки ЦОССУ ───────────────────────────────────────────────
+   Полосы рисуются шириной в %, без библиотек. Длина полосы = число,
+   объём даёт только градиент/тень — геометрию не искажаем, иначе
+   сравнивать столбцы глазом становится нельзя.                            */
+.cossu-chart { padding:12px; }
+.cossu-bar-row { margin-bottom:9px; }
+.cossu-bar-row:last-child { margin-bottom:0; }
+.cossu-bar-head {
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  font-size:11px; color:#475569; margin-bottom:3px;
+}
+.cossu-bar-head .n { color:#0f172a; font-weight:600; }
+.cossu-bar-head .m { color:#94a3b8; font-size:10px; }
+.cossu-track {
+  position:relative; height:20px; border-radius:5px; background:#f1f5f9;
+  box-shadow:inset 0 1px 2px rgba(15,23,42,.07); overflow:hidden;
+}
+.cossu-fill {
+  position:relative; height:100%; border-radius:5px; width:0;
+  transition:width .55s cubic-bezier(.4,0,.2,1);
+}
+/* Блик сверху — читается как объём, длину полосы не трогает */
+.cossu-fill::after {
+  content:''; position:absolute; left:0; right:0; top:0; height:48%;
+  background:linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,0));
+  border-radius:5px 5px 0 0; pointer-events:none;
+}
+/* Вторая, приглушённая полоса в том же треке (напр. «в очереди» поверх мест) */
+.cossu-fill.ghost { position:absolute; top:0; left:0; opacity:.35; }
+
+/* Кольцевая диаграмма на conic-gradient — тот же приём, что у маркеров карты */
+.cossu-donut {
+  width:118px; height:118px; border-radius:50%; flex:none; position:relative;
+  box-shadow:0 1px 3px rgba(15,23,42,.10);
+}
+.cossu-donut::after {
+  content:''; position:absolute; inset:26px; background:#fff; border-radius:50%;
+  box-shadow:inset 0 1px 3px rgba(15,23,42,.09);
+}
+.cossu-donut .mid {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; z-index:1; line-height:1.1;
+}
+.cossu-donut .mid b { font-size:19px; color:#0f172a; letter-spacing:-.02em; }
+.cossu-donut .mid span { font-size:9px; color:#94a3b8; }
+.cossu-legend { display:flex; flex-direction:column; gap:7px; justify-content:center; font-size:11px; }
+.cossu-legend .sw { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px; }
+.cossu-legend .val { color:#0f172a; font-weight:600; }
+.cossu-legend .pc { color:#94a3b8; }
+
+/* Мини-полоса внутри ячейки таблицы */
+.cossu-minibar {
+  height:4px; border-radius:2px; background:#e2e8f0; margin-top:3px; overflow:hidden;
+}
+.cossu-minibar i { display:block; height:100%; border-radius:2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cossu-fill { transition:none; }
+}
 </style>
 </head>
 <body>
@@ -736,11 +847,15 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 <div class="modal-overlay" id="cossu-stats-modal">
   <div class="coord-box" style="width:780px;max-width:96vw;max-height:90vh;padding:0;display:flex;flex-direction:column">
     <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
-      <h3 style="color:#0e7490;margin:0">Статистика ЦОССУ по областям</h3>
+      <h3 style="color:#0e7490;margin:0" id="cossu-stats-title">Статистика ЦОССУ по областям</h3>
       <button onclick="closeCossuStats()" title="Закрыть"
         style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
     </div>
-    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div style="display:flex;gap:4px;padding:0 20px;border-bottom:1px solid #e2e8f0;background:#fff">
+      <button class="cossu-stats-tab" data-tab="regions" onclick="switchCossuStatsTab('regions')">По областям</button>
+      <button class="cossu-stats-tab" data-tab="summary" onclick="switchCossuStatsTab('summary')">Сводка</button>
+    </div>
+    <div id="cossu-stats-sortbar" style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:12px;color:#64748b">Сортировка:</span>
       <select id="cossu-stats-sort" onchange="renderCossuStats()"
         style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
@@ -3184,8 +3299,22 @@ function _buildCossuStats() {
   return stats;
 }
 
+// Активная вкладка модалки статистики: 'regions' | 'summary'
+let cossuStatsTab = 'regions';
+
 function openCossuStats() {
   document.getElementById('cossu-stats-modal').style.display = 'flex';
+  switchCossuStatsTab(cossuStatsTab);
+}
+
+function switchCossuStatsTab(tab) {
+  cossuStatsTab = tab;
+  document.querySelectorAll('.cossu-stats-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  // Сортировка относится только к списку областей
+  document.getElementById('cossu-stats-sortbar').style.display = tab === 'regions' ? 'flex' : 'none';
+  document.getElementById('cossu-stats-title').textContent =
+    tab === 'regions' ? 'Статистика ЦОССУ по областям' : 'Сводная статистика ЦОССУ';
   renderCossuStats();
 }
 
@@ -3251,6 +3380,11 @@ function renderCossuStats() {
     container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
     return;
   }
+  if (cossuStatsTab === 'summary') { renderCossuSummary(container); return; }
+  renderCossuRegionStats(container);
+}
+
+function renderCossuRegionStats(container) {
   const stats = _buildCossuStats();
 
   // РК-агрегат: суммируем все области по типам
@@ -3299,6 +3433,280 @@ function renderCossuStats() {
   // РК всегда первая и закреплена сверху, не зависит от сортировки
   const rkCard = _renderCossuStatsCard('Республика Казахстан', rkByType, true);
   container.innerHTML = rkCard + regions.map(region => _renderCossuStatsCard(region, stats[region], false)).join('');
+}
+
+// ── Сводная статистика ЦОССУ (вкладка «Сводка») ─────────────────────────────
+const _nf = n => (n || 0).toLocaleString('ru-RU');
+const _pct = (part, whole) => whole > 0 ? (part / whole * 100).toFixed(1) + '%' : '—';
+
+function _cossuTile(value, label, sub, color) {
+  return `<div class="cossu-tile">
+    <div class="v"${color ? ` style="color:${color}"` : ''}>${value}</div>
+    <div class="l">${label}</div>
+    ${sub ? `<div class="s">${sub}</div>` : ''}
+  </div>`;
+}
+
+// count — необязательный счётчик рядом с заголовком (приглушённый)
+function _cossuSummaryCard(title, inner, count) {
+  return `<section class="cossu-card">
+    <h4>${title}${count != null ? ` <span class="cnt">${count}</span>` : ''}</h4>
+    ${inner}
+  </section>`;
+}
+
+const _tileGrid = tiles =>
+  `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;padding:12px">${tiles.join('')}</div>`;
+
+// Таблицы скроллятся внутри карточки, чтобы модалка не ехала вбок
+const _cossuTable = (head, rows, minWidth) =>
+  `<div style="overflow-x:auto"><table class="cossu-tbl" style="min-width:${minWidth}px">
+    <thead><tr>${head}</tr></thead><tbody>${rows}</tbody>
+  </table></div>`;
+
+// ── Хелперы диаграмм ────────────────────────────────────────────────────────
+// Ширина ставится не сразу, а через data-w + rAF — иначе CSS-переход не сыграет.
+const _w = (v, max) => max > 0 ? (v / max * 100).toFixed(2) + '%' : '0%';
+
+// Полоса: label слева, число справа, трек с заливкой.
+// ghost — вторая полоса в том же треке (напр. «пребывает» внутри «мест»).
+function _barRow(label, value, max, color, opts = {}) {
+  const { ghostValue = null, ghostColor = null, note = '', dot = null } = opts;
+  return `<div class="cossu-bar-row">
+    <div class="cossu-bar-head">
+      <span>${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${label}</span>
+      <span><span class="n">${_nf(value)}</span>${note ? ` <span class="m">${note}</span>` : ''}</span>
+    </div>
+    <div class="cossu-track">
+      ${ghostValue != null ? `<div class="cossu-fill ghost" data-w="${_w(ghostValue, max)}" style="background:${ghostColor}"></div>` : ''}
+      <div class="cossu-fill" data-w="${_w(value, max)}" style="background:${color}"></div>
+    </div>
+  </div>`;
+}
+
+// Трек = койко-мест, заливка = пребывает. Сразу видно и объём, и загрузку.
+function _occupancyRow(label, koika, residents, color, dot) {
+  const pct = koika > 0 ? residents / koika * 100 : 0;
+  const over = residents > koika;
+  return `<div class="cossu-bar-row">
+    <div class="cossu-bar-head">
+      <span>${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${label}</span>
+      <span><span class="n">${_nf(residents)}</span><span class="m"> / ${_nf(koika)} · ${pct.toFixed(0)}%</span></span>
+    </div>
+    <div class="cossu-track">
+      <div class="cossu-fill" data-w="${Math.min(pct, 100).toFixed(2)}%"
+           style="background:${over ? '#ef4444' : color}"></div>
+    </div>
+  </div>`;
+}
+
+// Кольцо на conic-gradient. segments: [{label, value, color}]
+function _donut(segments, centerValue, centerLabel) {
+  const total = segments.reduce((a, x) => a + x.value, 0);
+  let acc = 0;
+  const stops = segments.map(x => {
+    const from = acc / total * 360, to = (acc + x.value) / total * 360;
+    acc += x.value;
+    return `${x.color} ${from.toFixed(2)}deg ${to.toFixed(2)}deg`;
+  }).join(',');
+  const legend = segments.map(x => `<div>
+    <span class="sw" style="background:${x.color}"></span>${x.label}<br>
+    <span style="margin-left:15px"><span class="val">${_nf(x.value)}</span>
+    <span class="pc">· ${_pct(x.value, total)}</span></span>
+  </div>`).join('');
+  return `<div style="display:flex;gap:16px;align-items:center;padding:12px;flex-wrap:wrap">
+    <div class="cossu-donut" style="background:conic-gradient(${stops})">
+      <div class="mid"><b>${_nf(centerValue)}</b><span>${centerLabel}</span></div>
+    </div>
+    <div class="cossu-legend">${legend}</div>
+  </div>`;
+}
+
+// Собирает все агрегаты сводки за один проход по cossuData
+function _buildCossuSummary() {
+  const s = {
+    inst: 0, branches: 0, gov: 0, priv: 0, mixed: 0, withCoords: 0,
+    instWithQueue: 0, instNoQueue: 0, branchWithQueue: 0,
+    overfull: 0, exactlyFull: 0, empty: 0, hasFree: 0,
+    koika: 0, residents: 0, queue: 0,
+    byType: {},        // тип → {inst, branches, koika, residents, queue, gov, priv}
+    bySubtype: {},     // подтип → {branches, koika, residents, queue}
+    byRegion: {},      // область → {inst, koika, residents, queue}
+  };
+  for (const inst of cossuData) {
+    s.inst += 1;
+    const reg = inst.region || 'Не указано';
+    (s.byRegion[reg] ??= { inst: 0, koika: 0, residents: 0, queue: 0 });
+    s.byRegion[reg].inst      += 1;
+    s.byRegion[reg].koika     += inst.total_fakt_koika_mesto || 0;
+    s.byRegion[reg].residents += inst.total_residents_count  || 0;
+    s.byRegion[reg].queue     += inst.total_queue_count      || 0;
+    const isPriv = _cossuIsPrivate(inst);
+    isPriv ? s.priv += 1 : s.gov += 1;
+    if ((inst.types || []).length > 1) s.mixed += 1;
+    if (inst.lat != null && inst.lon != null) s.withCoords += 1;
+
+    const koika = inst.total_fakt_koika_mesto || 0;
+    const res   = inst.total_residents_count  || 0;
+    const q     = inst.total_queue_count      || 0;
+    s.koika += koika; s.residents += res; s.queue += q;
+    q > 0 ? s.instWithQueue += 1 : s.instNoQueue += 1;
+    if (res > koika)          s.overfull += 1;
+    else if (res === koika && koika > 0) s.exactlyFull += 1;
+    if (res === 0)            s.empty += 1;
+    if (_cossuFree(koika, res) > 0) s.hasFree += 1;
+
+    // Учреждение считается в типе, если у него есть хоть одно отделение этого типа
+    for (const t of (inst.types || [])) {
+      (s.byType[t] ??= { inst: 0, branches: 0, koika: 0, residents: 0, queue: 0, gov: 0, priv: 0 });
+      s.byType[t].inst += 1;
+      isPriv ? s.byType[t].priv += 1 : s.byType[t].gov += 1;
+    }
+    for (const b of (inst.branches || [])) {
+      s.branches += 1;
+      if ((b.queue_count || 0) > 0) s.branchWithQueue += 1;
+      const t = b.otd_typ || 'Не указано';
+      (s.byType[t] ??= { inst: 0, branches: 0, koika: 0, residents: 0, queue: 0, gov: 0, priv: 0 });
+      const bt = s.byType[t];
+      bt.branches  += 1;
+      bt.koika     += b.fakt_koika_mesto || 0;
+      bt.residents += b.residents_count  || 0;
+      bt.queue     += b.queue_count      || 0;
+
+      const st = b.otd_podtyp || 'Не указано';
+      (s.bySubtype[st] ??= { branches: 0, koika: 0, residents: 0, queue: 0 });
+      const ss = s.bySubtype[st];
+      ss.branches  += 1;
+      ss.koika     += b.fakt_koika_mesto || 0;
+      ss.residents += b.residents_count  || 0;
+      ss.queue     += b.queue_count      || 0;
+    }
+  }
+  return s;
+}
+
+function renderCossuSummary(container) {
+  const s = _buildCossuSummary();
+  const free = _cossuFree(s.koika, s.residents);
+
+  const nRegions = Object.keys(s.byRegion).length;
+
+  // 1. Учреждения — плитки + кольцо гос/частные
+  const cardInst = _cossuSummaryCard('Учреждения',
+    _tileGrid([
+      _cossuTile(_nf(s.inst),       'учреждений', `${_nf(s.branches)} отделений`),
+      _cossuTile(_nf(s.mixed),      'смешанных', 'несколько типов услуг'),
+      _cossuTile(_nf(nRegions),     'областей', 'представлено'),
+      _cossuTile(_nf(s.withCoords), 'на карте', `${_nf(s.inst - s.withCoords)} без координат`,
+        s.inst - s.withCoords > 0 ? '#ef4444' : '#059669'),
+    ]) +
+    _donut([
+      { label: 'Государственные', value: s.gov,  color: '#1e40af' },
+      { label: 'Частные',         value: s.priv, color: '#d97706' },
+    ], s.inst, 'всего'));
+
+  // 2. Места и заполненность — общая полоса + разрез по типам
+  const loadPct = s.koika > 0 ? (s.residents / s.koika * 100) : 0;
+  const typeOrder = [...COSSU_ALL_TYPES, ...Object.keys(s.byType).filter(t => !COSSU_ALL_TYPES.includes(t))];
+  const presentTypes = typeOrder.filter(t => s.byType[t]);
+
+  const cardCap = _cossuSummaryCard('Места и заполненность',
+    _tileGrid([
+      _cossuTile(_nf(s.koika),       'койко-мест', 'всего'),
+      _cossuTile(_nf(s.residents),   'пребывает', `загрузка ${loadPct.toFixed(1)}%`),
+      _cossuTile(_nf(free),          'свободно', `в ${_nf(s.hasFree)} учр.`, '#059669'),
+      _cossuTile(_nf(s.overfull),    'переполнено', 'пребывает > мест', s.overfull ? '#ef4444' : null),
+      _cossuTile(_nf(s.exactlyFull), 'заполнено ровно', 'мест не осталось'),
+      _cossuTile(_nf(s.empty),       'без получателей', 'пребывает 0'),
+    ]) +
+    `<div class="cossu-chart" style="padding-top:0">
+      ${_occupancyRow('Загрузка по РК', s.koika, s.residents, '#0891b2', null)}
+      <div style="font-size:10px;color:#94a3b8;margin:10px 0 7px">Загрузка по типам услуг</div>
+      ${presentTypes.map(t => _occupancyRow(
+          COSSU_TYPE_SHORT[t] || t, s.byType[t].koika, s.byType[t].residents,
+          COSSU_TYPE_COLORS[t] || '#94a3b8', COSSU_TYPE_COLORS[t] || '#94a3b8')).join('')}
+    </div>`);
+
+  // 3. Очередь — плитки + полосы по типам
+  const maxQueueType = Math.max(...presentTypes.map(t => s.byType[t].queue), 1);
+  const cardQueue = _cossuSummaryCard('Очередь',
+    _tileGrid([
+      _cossuTile(_nf(s.queue),           'человек в очереди', 'всего по РК', s.queue ? '#ef4444' : null),
+      _cossuTile(_nf(s.instWithQueue),   'учр. с очередью',  _pct(s.instWithQueue, s.inst), s.instWithQueue ? '#ef4444' : null),
+      _cossuTile(_nf(s.instNoQueue),     'учр. без очереди', _pct(s.instNoQueue, s.inst), '#059669'),
+      _cossuTile(_nf(s.branchWithQueue), 'отделений с очередью', _pct(s.branchWithQueue, s.branches)),
+      _cossuTile(s.instWithQueue ? (s.queue / s.instWithQueue).toFixed(1) : '0',
+        'в среднем', 'на учр. с очередью'),
+    ]) +
+    `<div class="cossu-chart" style="padding-top:0">
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px">Очередь по типам услуг</div>
+      ${presentTypes.map(t => _barRow(
+          COSSU_TYPE_SHORT[t] || t, s.byType[t].queue, maxQueueType,
+          COSSU_TYPE_COLORS[t] || '#94a3b8',
+          { dot: COSSU_TYPE_COLORS[t] || '#94a3b8' })).join('')}
+    </div>`);
+
+  // 4. Области — полосы загрузки, самые крупные сверху
+  const regionsSorted = Object.entries(s.byRegion).sort((a, b) => b[1].koika - a[1].koika);
+  const cardRegions = _cossuSummaryCard('Области — загрузка мест',
+    `<div class="cossu-chart">
+      ${regionsSorted.map(([name, d]) => _occupancyRow(
+          name, d.koika, d.residents, '#0891b2', null)).join('')}
+    </div>`,
+    nRegions);
+
+  // 5. По типам услуг — детальная таблица
+  const typeRows = presentTypes.map(t => {
+    const d = s.byType[t];
+    const color = COSSU_TYPE_COLORS[t] || '#94a3b8';
+    return `<tr>
+      <td style="white-space:nowrap">
+        <span class="dot" style="background:${color}"></span>${COSSU_TYPE_SHORT[t] || t}
+      </td>
+      <td style="font-weight:600;color:#0f172a">${_nf(d.inst)}</td>
+      <td style="color:#1e40af">${_nf(d.gov)}</td>
+      <td style="color:#b45309">${_nf(d.priv)}</td>
+      <td>${_nf(d.branches)}</td>
+      <td style="font-weight:600;color:#0f172a">${_nf(d.koika)}</td>
+      <td>${_nf(d.residents)}</td>
+      <td style="color:#059669">${_nf(_cossuFree(d.koika, d.residents))}</td>
+      <td style="font-weight:600${d.queue > 0 ? ';color:#ef4444' : ''}">${_nf(d.queue)}</td>
+    </tr>`;
+  }).join('');
+  const cardTypes = _cossuSummaryCard('По типам услуг',
+    _cossuTable(
+      `<th>Тип</th><th>Учр.</th><th>Гос</th><th>Частн</th><th>Отд.</th>
+       <th>Мест</th><th>Преб.</th><th>Своб.</th><th>Очередь</th>`,
+      typeRows, 580) +
+    `<p class="cossu-note">Учреждение считается в каждом типе, где у него есть отделение,
+      поэтому сумма по колонке «Учр.» больше ${_nf(s.inst)} — за счёт смешанных.</p>`);
+
+  // 6. По подтипам (сортировка по числу отделений)
+  const subsSorted = Object.entries(s.bySubtype).sort((a, b) => b[1].branches - a[1].branches);
+  const maxSubBranches = Math.max(...subsSorted.map(([, d]) => d.branches), 1);
+  const subRows = subsSorted
+    .map(([name, d]) => `<tr>
+      <td style="text-wrap:pretty">${_escapeHtml(name)}
+        <div class="cossu-minibar"><i style="width:${_w(d.branches, maxSubBranches)};background:#0891b2"></i></div>
+      </td>
+      <td style="font-weight:600;color:#0f172a">${_nf(d.branches)}</td>
+      <td>${_nf(d.koika)}</td>
+      <td>${_nf(d.residents)}</td>
+      <td style="color:#059669">${_nf(_cossuFree(d.koika, d.residents))}</td>
+      <td style="font-weight:600${d.queue > 0 ? ';color:#ef4444' : ''}">${_nf(d.queue)}</td>
+    </tr>`).join('');
+  const cardSubs = _cossuSummaryCard('По подтипам',
+    _cossuTable(
+      `<th>Подтип</th><th>Отд.</th><th>Мест</th><th>Преб.</th><th>Своб.</th><th>Очередь</th>`,
+      subRows, 520),
+    Object.keys(s.bySubtype).length);
+
+  container.innerHTML = cardInst + cardCap + cardQueue + cardRegions + cardTypes + cardSubs;
+
+  // Полосы вставлены с width:0 — раскрываем на следующем кадре, чтобы сыграл CSS-переход
+  requestAnimationFrame(() => {
+    container.querySelectorAll('.cossu-fill[data-w]').forEach(el => { el.style.width = el.dataset.w; });
+  });
 }
 
 function _escapeHtml(s) {
