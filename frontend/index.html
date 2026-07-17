@@ -855,6 +855,13 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <button class="cossu-stats-tab" data-tab="regions" onclick="switchCossuStatsTab('regions')">По областям</button>
       <button class="cossu-stats-tab" data-tab="summary" onclick="switchCossuStatsTab('summary')">Сводка</button>
     </div>
+    <div id="cossu-stats-filterbar" style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;color:#64748b">Регион:</span>
+      <select id="cossu-stats-region" onchange="renderCossuStats()"
+        style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151;max-width:320px">
+        <option value="">Республика Казахстан</option>
+      </select>
+    </div>
     <div id="cossu-stats-sortbar" style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:12px;color:#64748b">Сортировка:</span>
       <select id="cossu-stats-sort" onchange="renderCossuStats()"
@@ -3304,15 +3311,30 @@ let cossuStatsTab = 'regions';
 
 function openCossuStats() {
   document.getElementById('cossu-stats-modal').style.display = 'flex';
+  _fillCossuStatsRegions();
   switchCossuStatsTab(cossuStatsTab);
+}
+
+// Список регионов для фильтра сводки. Пересобираем при открытии — данные
+// могли обновиться; выбранный регион сохраняем, если он ещё существует.
+function _fillCossuStatsRegions() {
+  const sel = document.getElementById('cossu-stats-region');
+  if (!sel) return;
+  const prev = sel.value;
+  const regions = [...new Set((cossuData || []).map(i => i.region).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ru'));
+  sel.innerHTML = '<option value="">Республика Казахстан</option>' +
+    regions.map(r => `<option value="${_escapeHtml(r)}">${_escapeHtml(r)}</option>`).join('');
+  sel.value = regions.includes(prev) ? prev : '';
 }
 
 function switchCossuStatsTab(tab) {
   cossuStatsTab = tab;
   document.querySelectorAll('.cossu-stats-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
-  // Сортировка относится только к списку областей
-  document.getElementById('cossu-stats-sortbar').style.display = tab === 'regions' ? 'flex' : 'none';
+  // Сортировка относится к списку областей, фильтр региона — к сводке
+  document.getElementById('cossu-stats-sortbar').style.display   = tab === 'regions' ? 'flex' : 'none';
+  document.getElementById('cossu-stats-filterbar').style.display = tab === 'summary' ? 'flex' : 'none';
   document.getElementById('cossu-stats-title').textContent =
     tab === 'regions' ? 'Статистика ЦОССУ по областям' : 'Сводная статистика ЦОССУ';
   renderCossuStats();
@@ -3522,8 +3544,11 @@ function _donut(segments, centerValue, centerLabel) {
   </div>`;
 }
 
-// Собирает все агрегаты сводки за один проход по cossuData
-function _buildCossuSummary() {
+// Собирает все агрегаты сводки за один проход.
+// region — фильтр по области ('' = вся РК). Когда область выбрана, разрез
+// byArea считается по районам: одна строка «сама область» ничего не сказала бы.
+function _buildCossuSummary(region = '') {
+  const source = region ? cossuData.filter(i => (i.region || '') === region) : cossuData;
   const s = {
     inst: 0, branches: 0, gov: 0, priv: 0, mixed: 0, withCoords: 0,
     instWithQueue: 0, instNoQueue: 0, branchWithQueue: 0,
@@ -3531,16 +3556,19 @@ function _buildCossuSummary() {
     koika: 0, residents: 0, queue: 0,
     byType: {},        // тип → {inst, branches, koika, residents, queue, gov, priv}
     bySubtype: {},     // подтип → {branches, koika, residents, queue}
-    byRegion: {},      // область → {inst, koika, residents, queue}
+    byArea: {},        // область (или район, если фильтр) → {inst, koika, residents, queue}
+    regionCount: 0,    // сколько областей попало в выборку
   };
-  for (const inst of cossuData) {
+  const regionsSeen = new Set();
+  for (const inst of source) {
     s.inst += 1;
-    const reg = inst.region || 'Не указано';
-    (s.byRegion[reg] ??= { inst: 0, koika: 0, residents: 0, queue: 0 });
-    s.byRegion[reg].inst      += 1;
-    s.byRegion[reg].koika     += inst.total_fakt_koika_mesto || 0;
-    s.byRegion[reg].residents += inst.total_residents_count  || 0;
-    s.byRegion[reg].queue     += inst.total_queue_count      || 0;
+    if (inst.region) regionsSeen.add(inst.region);
+    const area = (region ? inst.rayon : inst.region) || 'Не указано';
+    (s.byArea[area] ??= { inst: 0, koika: 0, residents: 0, queue: 0 });
+    s.byArea[area].inst      += 1;
+    s.byArea[area].koika     += inst.total_fakt_koika_mesto || 0;
+    s.byArea[area].residents += inst.total_residents_count  || 0;
+    s.byArea[area].queue     += inst.total_queue_count      || 0;
     const isPriv = _cossuIsPrivate(inst);
     isPriv ? s.priv += 1 : s.gov += 1;
     if ((inst.types || []).length > 1) s.mixed += 1;
@@ -3582,21 +3610,29 @@ function _buildCossuSummary() {
       ss.queue     += b.queue_count      || 0;
     }
   }
+  s.regionCount = regionsSeen.size;
   return s;
 }
 
 function renderCossuSummary(container) {
-  const s = _buildCossuSummary();
+  const region = document.getElementById('cossu-stats-region')?.value || '';
+  const s = _buildCossuSummary(region);
+  if (!s.inst) {
+    container.innerHTML =
+      `<div style="color:#94a3b8;text-align:center;padding:28px 0;font-size:13px">
+        По региону «${_escapeHtml(region)}» учреждений нет</div>`;
+    return;
+  }
   const free = _cossuFree(s.koika, s.residents);
-
-  const nRegions = Object.keys(s.byRegion).length;
+  const nAreas = Object.keys(s.byArea).length;
 
   // 1. Учреждения — плитки + кольцо гос/частные
   const cardInst = _cossuSummaryCard('Учреждения',
     _tileGrid([
       _cossuTile(_nf(s.inst),       'учреждений', `${_nf(s.branches)} отделений`),
       _cossuTile(_nf(s.mixed),      'смешанных', 'несколько типов услуг'),
-      _cossuTile(_nf(nRegions),     'областей', 'представлено'),
+      region ? _cossuTile(_nf(nAreas), 'районов', 'представлено')
+             : _cossuTile(_nf(s.regionCount), 'областей', 'представлено'),
       _cossuTile(_nf(s.withCoords), 'на карте', `${_nf(s.inst - s.withCoords)} без координат`,
         s.inst - s.withCoords > 0 ? '#ef4444' : '#059669'),
     ]) +
@@ -3620,7 +3656,8 @@ function renderCossuSummary(container) {
       _cossuTile(_nf(s.empty),       'без получателей', 'пребывает 0'),
     ]) +
     `<div class="cossu-chart" style="padding-top:0">
-      ${_occupancyRow('Загрузка по РК', s.koika, s.residents, '#0891b2', null)}
+      ${_occupancyRow(region ? `Загрузка · ${region}` : 'Загрузка по РК',
+                      s.koika, s.residents, '#0891b2', null)}
       <div style="font-size:10px;color:#94a3b8;margin:10px 0 7px">Загрузка по типам услуг</div>
       ${presentTypes.map(t => _occupancyRow(
           COSSU_TYPE_SHORT[t] || t, s.byType[t].koika, s.byType[t].residents,
@@ -3631,7 +3668,8 @@ function renderCossuSummary(container) {
   const maxQueueType = Math.max(...presentTypes.map(t => s.byType[t].queue), 1);
   const cardQueue = _cossuSummaryCard('Очередь',
     _tileGrid([
-      _cossuTile(_nf(s.queue),           'человек в очереди', 'всего по РК', s.queue ? '#ef4444' : null),
+      _cossuTile(_nf(s.queue),           'человек в очереди', region ? 'по региону' : 'всего по РК',
+        s.queue ? '#ef4444' : null),
       _cossuTile(_nf(s.instWithQueue),   'учр. с очередью',  _pct(s.instWithQueue, s.inst), s.instWithQueue ? '#ef4444' : null),
       _cossuTile(_nf(s.instNoQueue),     'учр. без очереди', _pct(s.instNoQueue, s.inst), '#059669'),
       _cossuTile(_nf(s.branchWithQueue), 'отделений с очередью', _pct(s.branchWithQueue, s.branches)),
@@ -3646,14 +3684,16 @@ function renderCossuSummary(container) {
           { dot: COSSU_TYPE_COLORS[t] || '#94a3b8' })).join('')}
     </div>`);
 
-  // 4. Области — полосы загрузки, самые крупные сверху
-  const regionsSorted = Object.entries(s.byRegion).sort((a, b) => b[1].koika - a[1].koika);
-  const cardRegions = _cossuSummaryCard('Области — загрузка мест',
+  // 4. География — полосы загрузки, самые крупные сверху.
+  // Без фильтра это области, с фильтром — районы выбранной области.
+  const areasSorted = Object.entries(s.byArea).sort((a, b) => b[1].koika - a[1].koika);
+  const cardAreas = _cossuSummaryCard(
+    region ? 'Районы — загрузка мест' : 'Области — загрузка мест',
     `<div class="cossu-chart">
-      ${regionsSorted.map(([name, d]) => _occupancyRow(
+      ${areasSorted.map(([name, d]) => _occupancyRow(
           name, d.koika, d.residents, '#0891b2', null)).join('')}
     </div>`,
-    nRegions);
+    nAreas);
 
   // 5. По типам услуг — детальная таблица
   const typeRows = presentTypes.map(t => {
@@ -3701,7 +3741,7 @@ function renderCossuSummary(container) {
       subRows, 520),
     Object.keys(s.bySubtype).length);
 
-  container.innerHTML = cardInst + cardCap + cardQueue + cardRegions + cardTypes + cardSubs;
+  container.innerHTML = cardInst + cardCap + cardQueue + cardAreas + cardTypes + cardSubs;
 
   // Полосы вставлены с width:0 — раскрываем на следующем кадре, чтобы сыграл CSS-переход
   requestAnimationFrame(() => {
