@@ -3102,11 +3102,13 @@ function _drawCossuQueueLines(inst, force = false) {
   const mySet = new Set(fieldOf(inst));
   const origin = L.latLng(inst.lat, inst.lon);
 
-  // Кандидаты: другое учреждение, есть координаты, очередь == 0, общий тип/подтип
+  // Кандидаты: другое учреждение, есть координаты, очередь == 0,
+  // есть свободные места (пребывает меньше койко-мест), общий тип/подтип
   const candidates = cossuData.filter(c =>
     c.org_bin !== inst.org_bin &&
     c.lat != null && c.lon != null &&
     (c.total_queue_count || 0) === 0 &&
+    (c.total_residents_count || 0) < (c.total_fakt_koika_mesto || 0) &&
     fieldOf(c).some(t => mySet.has(t))
   );
   candidates.sort((a, b) =>
