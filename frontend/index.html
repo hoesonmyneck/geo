@@ -658,9 +658,9 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#22c55e;margin-right:7px;vertical-align:middle"></span>Уход на дому</div>
   <div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#a855f7;margin-right:7px;vertical-align:middle"></span>Временное пребывание</div>
   <div style="margin-top:4px;font-size:10px;color:#94a3b8">Делёный круг = несколько типов</div>
-  <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:12px;align-items:center">
-    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#64748b"></span>гос</span>
-    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#64748b"></span>частн</span>
+  <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:5px">
+    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#64748b"></span>Государственный</span>
+    <span style="display:inline-flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#64748b"></span>Частный</span>
   </div>
 </div>
 
@@ -853,7 +853,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     </div>
     <div style="display:flex;gap:4px;padding:0 20px;border-bottom:1px solid #e2e8f0;background:#fff">
       <button class="cossu-stats-tab" data-tab="regions" onclick="switchCossuStatsTab('regions')">По областям</button>
-      <button class="cossu-stats-tab" data-tab="summary" onclick="switchCossuStatsTab('summary')">Сводка</button>
+      <button class="cossu-stats-tab" data-tab="summary" onclick="switchCossuStatsTab('summary')">Свод</button>
     </div>
     <div id="cossu-stats-filterbar" style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:none;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:12px;color:#64748b">Регион:</span>
