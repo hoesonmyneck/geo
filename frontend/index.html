@@ -848,8 +848,13 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div class="coord-box" style="width:780px;max-width:96vw;max-height:90vh;padding:0;display:flex;flex-direction:column">
     <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
       <h3 style="color:#0e7490;margin:0" id="cossu-stats-title">Статистика ЦОССУ по областям</h3>
-      <button onclick="closeCossuStats()" title="Закрыть"
-        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button onclick="downloadCossuReport(this)" title="Скачать отчёт в PDF"
+          style="display:inline-flex;align-items:center;gap:6px;background:#0891b2;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">
+          <span style="font-size:14px">⭳</span><span>Скачать отчёт</span></button>
+        <button onclick="closeCossuStats()" title="Закрыть"
+          style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+      </div>
     </div>
     <div style="display:flex;gap:4px;padding:0 20px;border-bottom:1px solid #e2e8f0;background:#fff">
       <button class="cossu-stats-tab" data-tab="regions" onclick="switchCossuStatsTab('regions')">По областям</button>
@@ -906,6 +911,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
+<script src="https://unpkg.com/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════
 //  Конфиг
@@ -3753,6 +3759,114 @@ function renderCossuSummary(container) {
   requestAnimationFrame(() => {
     container.querySelectorAll('.cossu-fill[data-w]').forEach(el => { el.style.width = el.dataset.w; });
   });
+}
+
+// SVG-версия кольца для отчёта: html2canvas не умеет conic-gradient,
+// поэтому в PDF рисуем то же кольцо дугами <circle> со stroke-dasharray.
+function _svgDonut(segments, centerValue, centerLabel) {
+  const total = segments.reduce((a, x) => a + x.value, 0) || 1;
+  const cx = 59, cy = 59, r = 46, sw = 26;
+  const C = 2 * Math.PI * r;
+  let offset = 0;
+  const arcs = segments.map(x => {
+    const len = x.value / total * C;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${x.color}"
+      stroke-width="${sw}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}"
+      stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"></circle>`;
+    offset += len;
+    return seg;
+  }).join('');
+  return `<svg width="118" height="118" viewBox="0 0 118 118" style="flex:none">
+    ${arcs}
+    <circle cx="${cx}" cy="${cy}" r="33" fill="#fff"></circle>
+    <text x="${cx}" y="${cy - 1}" text-anchor="middle" style="font:700 19px sans-serif;fill:#0f172a">${_nf(centerValue)}</text>
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" style="font:9px sans-serif;fill:#94a3b8">${centerLabel}</text>
+  </svg>`;
+}
+
+// Скачать отчёт одним PDF: сначала «По областям», затем с новой страницы «Свод»
+// (свод — по выбранному в фильтре региону). Без диалога печати: html2pdf сам
+// собирает и скачивает файл, включая всю прокрутку и обе вкладки.
+function downloadCossuReport(btn) {
+  if (!cossuData || !cossuData.length) return;
+  if (typeof html2pdf === 'undefined') { alert('Модуль PDF ещё грузится, повторите через секунду'); return; }
+  const region = document.getElementById('cossu-stats-region')?.value || '';
+  const regionLabel = region || 'Республика Казахстан';
+
+  // Обе вкладки в offscreen-контейнеры
+  const regDiv = document.createElement('div');
+  renderCossuRegionStats(regDiv);
+  const sumDiv = document.createElement('div');
+  renderCossuSummary(sumDiv);
+  // Ширины полос ставим сразу (в отчёте нет кадра для rAF-раскрытия)
+  sumDiv.querySelectorAll('.cossu-fill[data-w]').forEach(el => { el.style.width = el.dataset.w; });
+  // Кольцо conic-gradient → SVG
+  const donutEl = sumDiv.querySelector('.cossu-donut');
+  if (donutEl) {
+    const s = _buildCossuSummary(region);
+    const holder = document.createElement('div');
+    holder.innerHTML = _svgDonut(
+      [{ value: s.gov, color: '#1e40af' }, { value: s.priv, color: '#d97706' }],
+      s.inst, 'всего');
+    donutEl.replaceWith(holder.firstElementChild);
+  }
+
+  const today = new Date().toLocaleDateString('ru-RU');
+  const report = document.createElement('div');
+  report.id = 'cossu-report-print';
+  report.innerHTML =
+    `<div class="cossu-report-head">
+       <h1>Отчёт ЦОССУ</h1>
+       <div class="meta">Регион: <b>${_escapeHtml(regionLabel)}</b> · ${today}</div>
+     </div>
+     <h2 class="cossu-report-sec">Статистика по областям</h2>
+     ${regDiv.innerHTML}
+     <div class="html2pdf__page-break"></div>
+     <h2 class="cossu-report-sec">Сводная статистика${region ? ` — ${_escapeHtml(region)}` : ''}</h2>
+     ${sumDiv.innerHTML}`;
+
+  const style = document.createElement('style');
+  style.id = 'cossu-report-style';
+  style.textContent =
+    // Видимый белый слой поверх экрана на время съёмки (html2canvas надёжно
+    // берёт то, что реально на странице). Внутри — контент фикс. ширины,
+    // всё раскрыто (overflow/таблицы), чтобы попало целиком.
+    `#cossu-report-overlay { position:fixed; inset:0; z-index:100000; background:#fff; overflow:auto; }
+     #cossu-report-print { width:760px; margin:0 auto; background:#fff; padding:12px 14px; }
+     #cossu-report-print [style*="overflow"] { overflow:visible !important; }
+     #cossu-report-print .cossu-tbl { min-width:0 !important; width:100% !important; }
+     #cossu-report-print .cossu-report-head h1 { margin:0 0 2px; font-size:22px; color:#0e7490; }
+     #cossu-report-print .cossu-report-head .meta { font-size:13px; color:#64748b; margin-bottom:14px; }
+     #cossu-report-print .cossu-report-sec { font-size:16px; color:#0e7490; margin:14px 0 10px; padding-bottom:4px; border-bottom:2px solid #0891b2; }`;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cossu-report-overlay';
+  overlay.appendChild(report);
+  document.head.appendChild(style);
+  document.body.appendChild(overlay);
+
+  const label = btn ? btn.querySelector('span:last-child') : null;
+  const prevTxt = label ? label.textContent : '';
+  if (label) label.textContent = 'Готовим…';
+  if (btn) btn.disabled = true;
+
+  const done = () => {
+    overlay.remove(); style.remove();
+    if (label) label.textContent = prevTxt;
+    if (btn) btn.disabled = false;
+  };
+
+  // небольшая задержка — дать слою и SVG прорисоваться перед съёмкой
+  setTimeout(() => {
+    html2pdf().set({
+      filename:    `Отчёт ЦОССУ — ${regionLabel}.pdf`,
+      margin:      [10, 8, 12, 8],
+      image:       { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak:   { mode: ['css', 'legacy'], avoid: ['tr', '.cossu-card', '.cossu-bar-row'] },
+    }).from(report).save().then(done, done);
+  }, 80);
 }
 
 function _escapeHtml(s) {
