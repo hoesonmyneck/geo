@@ -3784,18 +3784,15 @@ function _svgDonut(segments, centerValue, centerLabel) {
   </svg>`;
 }
 
-// Скачать отчёт одним PDF: сначала «По областям», затем с новой страницы «Свод»
-// (свод — по выбранному в фильтре региону). Без диалога печати: html2pdf сам
-// собирает и скачивает файл, включая всю прокрутку и обе вкладки.
+// Скачать отчёт одним PDF: сводная статистика по выбранному в фильтре региону.
+// Без диалога печати: html2pdf сам собирает и скачивает файл целиком.
 function downloadCossuReport(btn) {
   if (!cossuData || !cossuData.length) return;
   if (typeof html2pdf === 'undefined') { alert('Модуль PDF ещё грузится, повторите через секунду'); return; }
   const region = document.getElementById('cossu-stats-region')?.value || '';
   const regionLabel = region || 'Республика Казахстан';
 
-  // Обе вкладки в offscreen-контейнеры
-  const regDiv = document.createElement('div');
-  renderCossuRegionStats(regDiv);
+  // Свод в offscreen-контейнер
   const sumDiv = document.createElement('div');
   renderCossuSummary(sumDiv);
   // Ширины полос ставим сразу (в отчёте нет кадра для rAF-раскрытия)
@@ -3816,13 +3813,9 @@ function downloadCossuReport(btn) {
   report.id = 'cossu-report-print';
   report.innerHTML =
     `<div class="cossu-report-head">
-       <h1>Отчёт ЦОССУ</h1>
+       <h1>Сводная статистика ЦОССУ</h1>
        <div class="meta">Регион: <b>${_escapeHtml(regionLabel)}</b> · ${today}</div>
      </div>
-     <h2 class="cossu-report-sec">Статистика по областям</h2>
-     ${regDiv.innerHTML}
-     <div class="html2pdf__page-break"></div>
-     <h2 class="cossu-report-sec">Сводная статистика${region ? ` — ${_escapeHtml(region)}` : ''}</h2>
      ${sumDiv.innerHTML}`;
 
   const style = document.createElement('style');
