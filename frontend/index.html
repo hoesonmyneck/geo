@@ -444,7 +444,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
-    <button class="action-btn" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
+    <button class="action-btn" id="btn-kandas-list" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
     <button class="action-btn" onclick="openCossuModal()" style="background:#0891b2;color:#fff;border-color:#0891b2">Список ЦОССУ</button>
     <button class="action-btn" onclick="openCossuStats()" style="background:#0e7490;color:#fff;border-color:#0e7490">Статистика ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
@@ -635,6 +635,13 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <!-- Режим кандасов: кандасы по городам -->
   <div id="st-kandas-info" style="display:none;font-size:12px;line-height:1.8">
+    <!-- Переключатель Кандасы / Постоянные резиденты (взаимоисключающие) -->
+    <div style="display:flex;margin-bottom:8px;border:1px solid #c4b5fd;border-radius:6px;overflow:hidden">
+      <button id="kv-btn-kandas" onclick="switchKandasView('kandas')"
+        style="flex:1;padding:6px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Кандасы</button>
+      <button id="kv-btn-pmz" onclick="switchKandasView('pmz')"
+        style="flex:1;padding:6px;border:none;background:#fff;color:#0891b2;font-size:11px;font-weight:700;cursor:pointer">Постоянные резиденты</button>
+    </div>
     <span id="st-kandas-counts"></span>
   </div>
   <!-- Режим ЦОССУ: учреждения по областям -->
@@ -798,7 +805,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div class="coord-box" style="width:1440px;max-width:96vw;max-height:85vh;overflow-y:auto;padding:0;display:flex;flex-direction:column">
     <!-- Заголовок прилипает при скролле -->
     <div style="position:sticky;top:0;background:#fff;z-index:2;padding:16px 20px 10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
-      <h3 style="color:#7c3aed;margin:0">Реестр кандасов</h3>
+      <h3 id="kandas-modal-title" style="color:#7c3aed;margin:0">Реестр кандасов</h3>
       <button onclick="closeKandasModal()" title="Закрыть"
         style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
     </div>
@@ -1169,14 +1176,8 @@ function startApp() {
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-kandas-info').style.display = 'block';
     document.getElementById('st-normal-info').style.display = 'none';
-    // В дропдауне "Перейти к области" гасим неактивные опции
-    document.querySelectorAll('#goto-region option[value]:not([value=""])').forEach(opt => {
-      if (!_isKandasActiveOblastName(opt.value)) {
-        opt.disabled = true;
-        opt.style.color = '#cbd5e1';
-        opt.textContent = opt.textContent + ' (недоступно)';
-      }
-    });
+    // В дропдауне "Перейти к области" гасим неактивные опции (по текущему виду)
+    _applyKandasRegionDropdown();
   } else if (isCossuRole()) {
     // ── Режим ЦОССУ: тоже скрываем всё кроме списка ЦОССУ и границ ──
     ['cats', 'dists', 'conf', 'clust'].forEach(id => {
@@ -1670,6 +1671,8 @@ async function fetchDistricts() {
   const kandasMode = isKandasRole();
   const isFeatureActive = (feature) => {
     if (!kandasMode) return true;
+    // Резиденты: неактивных регионов нет — подсвечиваем все.
+    if (_isPmzView()) return true;
     if (showOblast) return _isKandasActiveOblastName(feature.properties?.name);
     return _isKandasActiveRaion(feature);
   };
@@ -2125,6 +2128,10 @@ function toggleHideMarkers(hide) {
 // ═══════════════════════════════════════════════════════
 let kandasLayer   = null;   // слой с маркерами кандасов (дом)
 let kandasData    = [];     // кэш списка
+// Что показываем в разделе: 'kandas' (по умолчанию) или 'pmz' (постоянные
+// резиденты). Переключается тумблером, оба типа одновременно не показываются.
+let kandasView    = 'kandas';
+function _isPmzView() { return kandasView === 'pmz'; }
 
 // Для кандас-аккаунтов чекбокс удалён из DOM — линза всегда включена
 function _isKandasLensOn() {
@@ -2151,6 +2158,21 @@ const kandasIcon = L.divIcon({
   iconSize: [28, 28],
   iconAnchor: [14, 14],
   popupAnchor: [0, -16],
+});
+
+// Квадратная бирюзовая иконка "П" — постоянный резидент (место жительства).
+// Форма (квадрат vs круг у кандасов) — визуальное отличие двух типов.
+const pmzIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    width:26px;height:26px;border-radius:4px;
+    background:#0891b2;border:3px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:12px;font-weight:700">П</div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -15],
 });
 
 // Оранжевая иконка "Р" — место работы
@@ -2190,7 +2212,7 @@ function _hideWorkMarker() {
 
 async function loadKandasLayer() {
   const token = localStorage.getItem('geo_token');
-  const res = await fetch('/api/kandas', {
+  const res = await fetch('/api/kandas?kind=' + kandasView, {
     headers: token ? { Authorization: 'Bearer ' + token } : {}
   });
   if (!res.ok) return;
@@ -2200,9 +2222,10 @@ async function loadKandasLayer() {
   _hideWorkMarker();
   kandasLayer = L.layerGroup();
 
+  const icon = _isPmzView() ? pmzIcon : kandasIcon;
   for (const k of kandasData) {
     if (k.lat == null || k.lon == null) continue;
-    const marker = L.marker([k.lat, k.lon], { icon: kandasIcon });
+    const marker = L.marker([k.lat, k.lon], { icon });
     // maxHeight убран — высоту/скролл контролирует CSS внутри попапа (max-height:600 + overflow-y:auto)
     marker.bindPopup(buildKandasPopup(k), { maxWidth: 900, minWidth: 600 });
     marker._kandasData = k;
@@ -2218,6 +2241,37 @@ async function loadKandasLayer() {
   }
   map.addLayer(kandasLayer);
   if (isKandasRole()) updateKandasStats();
+}
+
+// Гасит недоступные области в дропдауне "Перейти к области".
+// Кандасы — гасим неактивные; резиденты — доступны все.
+function _applyKandasRegionDropdown() {
+  document.querySelectorAll('#goto-region option[value]:not([value=""])').forEach(opt => {
+    const base = opt.textContent.replace(/ \(недоступно\)$/, '');
+    const inactive = !_isPmzView() && !_isKandasActiveOblastName(opt.value);
+    opt.disabled = inactive;
+    opt.style.color = inactive ? '#cbd5e1' : '';
+    opt.textContent = inactive ? base + ' (недоступно)' : base;
+  });
+}
+
+// Переключение Кандасы ⇄ Постоянные резиденты (взаимоисключающие).
+function switchKandasView(view) {
+  if (view === kandasView) return;
+  kandasView = view;
+  const bK = document.getElementById('kv-btn-kandas');
+  const bP = document.getElementById('kv-btn-pmz');
+  const css = (active, color) =>
+    `flex:1;padding:6px;border:none;font-size:11px;font-weight:700;cursor:pointer;` +
+    (active ? `background:${color};color:#fff` : `background:#fff;color:${color}`);
+  if (bK) bK.style.cssText = css(view === 'kandas', '#7c3aed');
+  if (bP) bP.style.cssText = css(view === 'pmz', '#0891b2');
+  const btnList = document.getElementById('btn-kandas-list');
+  if (btnList) btnList.textContent = view === 'pmz' ? 'Список резидентов' : 'Список кандасов';
+  _applyKandasRegionDropdown();
+  loadKandasLayer();
+  // Активность регионов меняется — перерисовываем границы
+  if (districtsVisible) fetchDistricts();
 }
 
 // Аббревиатуры из дропдауна → подстрока для поиска в полном названии региона
@@ -2265,10 +2319,10 @@ function updateKandasStats() {
   // Кандасы без координат
   const unknownCount = kandasData.filter(k => k.lat == null || k.lon == null).length;
 
-  // Все регионы из дропдауна — для кандасов оставляем ТОЛЬКО активные области
+  // Регионы из дропдауна. Кандасы — только активные области; резиденты — все.
   const allRegions = Array.from(
     document.querySelectorAll('#goto-region option[value]:not([value=""])')
-  ).map(o => o.value).filter(r => _isKandasActiveOblastName(r));
+  ).map(o => o.value).filter(r => _isPmzView() || _isKandasActiveOblastName(r));
   // Подсчёт кандасов по полю oblast (только в активных областях)
   const counts = {};
   for (const r of allRegions) counts[r] = 0;
@@ -2301,7 +2355,7 @@ const KANDAS_FIELD_ORDER = [
   // Простые поля из нового xlsx
   'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz', 'polyclinic',
   // Легаси-поля (старые kandas)
-  'bin_work',    'work_org',    'work_address', 'position',
+  'bin_work',    'work_org',    'oked',        'work_address', 'position',
   'staff_pos',   'work_type',   'specialty',
   'cks_cat',     'benefits',
   'real_estate', 'nationality', 'note',         'family',
@@ -2318,6 +2372,7 @@ const KANDAS_FIELD_LABELS = {
   // Легаси
   bin_work:    'БИН работодателя',
   work_org:    'Название организации',
+  oked:        'ОКЭД',
   work_address:'Адрес работы',
   position:    'Должность по НКЗ',
   staff_pos:   'Штатная должность',
@@ -2449,6 +2504,11 @@ function _buildAnketaExtended(extra) {
   a._work_end        = work.end_date;
   return a;
 }
+const KANDAS_LABELS_PMZ = {
+  reg_date:     'Дата регистрации',
+  scoring_date: 'Дата скоринга',
+  pmz_date:     'Дата статуса ПМЖ',
+};
 const KANDAS_LABELS_STATUS = {
   document_number: '№ удостоверения',
   status_date:     'Дата получения статуса',
@@ -2561,14 +2621,20 @@ function _renderKandasDetails(extra, asTable) {
     // первые 2 непустые секции открыты по умолчанию, остальные свёрнуты
     sections.push(_kandasSection(title, content, sections.length < 2));
   };
+  add('Статус резидента',         _renderKVList(extra.pmz_status,     KANDAS_LABELS_PMZ,            asTable));
   add('Анкетные данные',          _renderKVList(_buildAnketaExtended(extra), KANDAS_LABELS_ANKETA,  asTable));
   add('Статус кандаса',           _renderKVList(extra.kandas_status,  KANDAS_LABELS_STATUS,         asTable));
   add('Адрес регистрации',        _renderKVList(extra.reg_address,    KANDAS_LABELS_REG,            asTable));
   add('Трудовой договор (ЕСУТД)', _renderKVList(extra.labor_contract, KANDAS_LABELS_LABOR_CONTRACT, asTable));
   // Показываем секции "Образование (история)" и "Опыт работы (история)" ТОЛЬКО если записей > 1
   // (первая запись уже отображена в "Анкетных данных").
-  if (extra.education?.length > 1) {
-    add('Образование (история)',  _kandasListContent(extra.education,    KANDAS_LABELS_EDU,  asTable));
+  // Кандасы: первая запись уже в "Анкетных данных", историю показываем при >1.
+  // Резиденты: анкеты нет — показываем образование даже одной записью.
+  const eduMulti = extra.education?.length > 1;
+  const eduPmz   = _isPmzView() && extra.education?.length >= 1;
+  if (eduMulti || eduPmz) {
+    add(eduMulti ? 'Образование (история)' : 'Образование',
+        _kandasListContent(extra.education, KANDAS_LABELS_EDU, asTable));
   }
   if (extra.work_history?.length > 1) {
     add('Опыт работы (история)',  _kandasListContent(extra.work_history, KANDAS_LABELS_WORK, asTable));
@@ -2627,8 +2693,10 @@ function toggleKandasLens(on) {
 
 async function openKandasModal() {
   document.getElementById('kandas-modal').style.display = 'flex';
+  const title = document.getElementById('kandas-modal-title');
+  if (title) title.textContent = _isPmzView() ? 'Реестр постоянных резидентов' : 'Реестр кандасов';
   const token = localStorage.getItem('geo_token');
-  const res = await fetch('/api/kandas', {
+  const res = await fetch('/api/kandas?kind=' + kandasView, {
     headers: token ? { Authorization: 'Bearer ' + token } : {}
   });
   if (!res.ok) return;

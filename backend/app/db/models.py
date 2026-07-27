@@ -182,6 +182,10 @@ class Kandas(Base):
     __tablename__ = "kandas"
 
     id:           Mapped[int]        = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Тип записи в этом реестре: 'kandas' — кандасы (по умолчанию),
+    # 'pmz' — обладатели статуса постоянного резидента. Один переключатель
+    # на фронте показывает либо тех, либо других (не одновременно).
+    kind:         Mapped[str]        = mapped_column(String(16), nullable=False, server_default="kandas", index=True)
     fio:          Mapped[str]        = mapped_column(String(256), nullable=False)
     iin:          Mapped[str | None] = mapped_column(String(32),  nullable=True,  index=True)
     dob:          Mapped[str | None] = mapped_column(String(32),  nullable=True)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/kandas", tags=["kandas"])
 
 class KandasOut(BaseModel):
     id:          int
+    kind:        str = "kandas"
     fio:         str
     iin:         str | None
     dob:         str | None
@@ -60,14 +61,22 @@ def _require_kandas_role(user: User = Depends(get_current_user)) -> User:
 
 @router.get("", response_model=list[KandasOut])
 async def list_kandas(
+    kind: str = Query("kandas", description="Тип реестра: kandas | pmz"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_kandas_role),
 ):
-    """Список всех кандасов (только для ролей kandas)."""
-    result = await db.execute(select(Kandas).order_by(Kandas.id))
+    """Список записей реестра нужного типа (только для ролей kandas).
+
+    kind='kandas' — кандасы (по умолчанию), kind='pmz' — постоянные резиденты.
+    """
+    result = await db.execute(
+        select(Kandas).where(Kandas.kind == kind).order_by(Kandas.id)
+    )
     kandas_list = result.scalars().all()
 
-    photo_result = await db.execute(select(Kandas.id).where(Kandas.photo != None))
+    photo_result = await db.execute(
+        select(Kandas.id).where(Kandas.photo != None, Kandas.kind == kind)
+    )
     photo_ids = {row[0] for row in photo_result}
 
     return [

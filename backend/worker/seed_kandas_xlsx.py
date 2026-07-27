@@ -302,7 +302,16 @@ def _build_main_kandas(rows: list[dict], family: list[dict]) -> dict:
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 async def main():
-    xlsx_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/app/data/input/kandas_perso.xlsx")
+    # Необязательный --only-iin ИИН[,ИИН...] — грузить/обновлять только этих
+    # главных кандасов, остальные строки файла игнорировать. Нужно, чтобы
+    # добавить новую запись, НЕ затирая ручные правки существующих.
+    argv = list(sys.argv[1:])
+    only_iins: set[str] = set()
+    if "--only-iin" in argv:
+        i = argv.index("--only-iin")
+        only_iins = {_iin(x) for x in argv[i + 1].split(",") if x.strip()}
+        del argv[i:i + 2]
+    xlsx_path = Path(argv[0]) if argv else Path("/app/data/input/kandas_perso.xlsx")
     if not xlsx_path.exists():
         print(f"ERROR: file not found: {xlsx_path}")
         sys.exit(1)
@@ -349,6 +358,13 @@ async def main():
             kandas_records.append(_build_main_kandas(rs, family))
 
     print(f"\nГотово к загрузке: {len(kandas_records)} главных кандасов")
+
+    if only_iins:
+        kandas_records = [k for k in kandas_records if k["iin"] in only_iins]
+        print(f"  фильтр --only-iin: оставлено {len(kandas_records)} "
+              f"(ИИН: {', '.join(sorted(only_iins))})")
+        if not kandas_records:
+            print("  ! ни один ИИН из --only-iin не найден в файле")
 
     # Upsert по IIN
     inserted = updated = 0
