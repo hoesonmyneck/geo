@@ -1212,6 +1212,9 @@ function startApp() {
     if (publicCossu) {
       document.querySelector('[onclick="openCossuModal()"]')?.remove();
       document.querySelector('[onclick="openCossuStats()"]')?.remove();
+      // Фильтр очередей (нет/есть очередь, заполнен, переполнено) — скрыть
+      document.getElementById('cossu-queue-head').style.display = 'none';
+      document.getElementById('cossu-queue-body').style.display = 'none';
       const ul = document.getElementById('user-label');
       if (ul) { ul.textContent = ''; ul.onclick = null; ul.style.display = 'none'; }
     }
@@ -3287,15 +3290,15 @@ function _cossuMapPopup(inst) {
       }">${_cossuIsPrivate(inst) ? 'Частная' : 'Государственная'}</span>
     </div>
     ${inst.fulladdress ? `<div style="font-size:12px;margin-bottom:6px">${_escapeHtml(inst.fulladdress)}</div>` : ''}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+    ${publicCossu ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:11px"><b>${inst.total_fakt_koika_mesto || 0}</b> койко-мест</span>
       <span style="font-size:11px"><b>${inst.total_residents_count || 0}</b> получателей</span>
       <span style="font-size:11px"><b>${_cossuFree(inst.total_fakt_koika_mesto, inst.total_residents_count)}</b> свободно</span>
       <span style="font-size:11px"><b>${inst.total_queue_count || 0}</b> в очереди</span>
-    </div>
+    </div>`}
     ${types ? `<div style="margin-top:4px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Тип:</span><br>${types}</div>` : ''}
     ${subtypes ? `<div style="margin-top:6px"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px">Подтип:</span><br>${subtypes}</div>` : ''}
-    ${(inst.total_queue_count || 0) > 0 ? `
+    ${(!publicCossu && (inst.total_queue_count || 0) > 0) ? `
       <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0">
         <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#475569;cursor:pointer">
           <input type="checkbox" onchange="_setCossuLineMode(this.checked, '${_escapeHtml(inst.org_bin)}')" ${cossuLineMode === 'subtype' ? 'checked' : ''}>
