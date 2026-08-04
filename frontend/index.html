@@ -932,6 +932,7 @@ const LIST_LIMIT = 50;
 //  Состояние
 // ═══════════════════════════════════════════════════════
 let currentUser  = null;
+let publicCossu  = false;   // публичный вход ?mode=cossu-public (карта ЦОССУ без логина)
 let map          = null;
 let clusterGroup = null;
 let allPlaces    = [];
@@ -1206,6 +1207,14 @@ function startApp() {
     document.getElementById('cossu-sobst-head').style.display = '';
     document.getElementById('cossu-sobst-body').style.display = '';
     document.getElementById('cossu-legend').style.display = 'block';
+    // Публичный режим: убираем кнопки «Статистика ЦОССУ» и «Список ЦОССУ»
+    // из DOM (от дурака) и логаут-лейбл.
+    if (publicCossu) {
+      document.querySelector('[onclick="openCossuModal()"]')?.remove();
+      document.querySelector('[onclick="openCossuStats()"]')?.remove();
+      const ul = document.getElementById('user-label');
+      if (ul) { ul.textContent = ''; ul.onclick = null; ul.style.display = 'none'; }
+    }
   } else {
     // ── Обычный режим: скрыть кнопки Кандасы / ЦОССУ и линзу ──
     document.getElementById('stats-panel').style.display = 'block';
@@ -4528,7 +4537,16 @@ async function deleteKandasPhoto(id) {
 // ═══════════════════════════════════════════════════════
 //  Запуск
 // ═══════════════════════════════════════════════════════
-checkAuth();
+// Публичный вход в раздел ЦОССУ без авторизации: ?mode=cossu-public.
+// Ставим псевдо-роль viewer_cossu, чтобы прошёл весь ЦОССУ-путь, и стартуем
+// сразу, минуя окно логина. Кнопки статистики/списка скрываются в startApp.
+if (new URLSearchParams(location.search).get('mode') === 'cossu-public') {
+  publicCossu = true;
+  currentUser = { role: 'viewer_cossu', login: 'public', fio: 'ЦОССУ — публичный просмотр' };
+  startApp();
+} else {
+  checkAuth();
+}
 
 // ═══════════════════════════════════════════════════════
 //  Управление пользователями (admin)

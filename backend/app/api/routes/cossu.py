@@ -84,10 +84,12 @@ def _require_cossu_role(user: User = Depends(get_current_user)) -> User:
 @router.get("", response_model=list[CossuInstitution])
 async def list_cossu(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(_require_cossu_role),
 ):
     """Список учреждений с вложенными отделениями.
     Сортируем по region → rayon → org_name → org_bin для удобного просмотра.
+
+    БЕЗ авторизации: раздел ЦОССУ доступен публично (карта). Кнопки статистики
+    и списка на фронте скрыты для публичного режима, но данные точек открыты.
     """
     result = await db.execute(
         select(Cossu).order_by(Cossu.region, Cossu.rayon, Cossu.org_name, Cossu.org_bin, Cossu.id)
