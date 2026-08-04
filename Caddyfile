@@ -37,11 +37,16 @@
     import common
 }
 
-# HTTPS на внутреннем 443 → внешний 4443 (для прода: https://interaction.enbek.kz:4443)
-# Явно указываем домены — иначе `tls internal` не знает на какое имя выпускать
-# самоподписанный сертификат и TLS-хендшейк падает с ERR_SSL_PROTOCOL_ERROR.
-# localhost — чтобы локально тоже можно было зайти по HTTPS если понадобится.
-interaction.enbek.kz, localhost {
+# HTTPS прод: реальный wildcard-сертификат *.enbek.kz.
+# Файлы лежат в ./certs на сервере и монтируются в контейнер как /certs
+# (см. docker-compose, volume caddy). НЕ в git — приватный ключ.
+interaction.enbek.kz {
+    tls /certs/fullchain.pem /certs/privkey.pem
+    import common
+}
+
+# HTTPS локально — самоподписанный (реальный серт не на localhost).
+localhost {
     tls internal
     import common
 }
