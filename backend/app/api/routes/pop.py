@@ -10,10 +10,13 @@ import re
 import orjson
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
+from app.core.deps import require_editor
+from app.db.models import User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/pop", tags=["pop"])
@@ -59,22 +62,80 @@ async def points(
     return _resp({"count": len(pts), "truncated": len(pts) >= limit, "points": pts})
 
 
+class CoordsUpdate(BaseModel):
+    lat: float
+    lon: float
+    reason: str | None = None
+
+
+@router.patch("/{dwelling_id}/coords")
+async def update_coords(
+    dwelling_id: int,
+    body: CoordsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_editor),
+):
+    """Ручная правка координат жилища (pop_dwelling). Обновляем и geom —
+    иначе точка не попадёт в новый bbox при перезагрузке окна карты.
+    precision → «высокая» (проверено человеком), coord_source → «manual»."""
+    row = (await db.execute(text("""
+        UPDATE pop_dwelling
+           SET lat = :lat, lon = :lon,
+               geom = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
+               precision = 'высокая',
+               coord_source = 'manual'
+         WHERE dwelling_id = :id
+     RETURNING dwelling_id, lat, lon, precision, coord_source
+    """), {"id": dwelling_id, "lat": body.lat, "lon": body.lon})).first()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Dwelling not found")
+    await db.commit()
+    return {
+        "id": row[0], "lat": row[1], "lon": row[2],
+        "confidence": CONF.get(row[3], "miss"), "source": row[4],
+    }
+
+
+# Категории, по которым можно суммировать людей на кружке (whitelist от SQL-инъекций)
+CAT_KEYS = {
+    "total", "male", "female", "trud_vozrast", "deti_do18", "working",
+    "lsi", "asp", "student", "pensioners", "ip", "kandas",
+}
+
+
 @router.get("/clusters")
 async def clusters(
     w: float, s: float, e: float, n: float, zoom: float,
+    cats: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Агрегированные «кружки» населения в bbox для мелкого зума: точки
     группируются в сетку с ячейкой ~70/2^zoom градусов (≈пиксельная
-    кластеризация). Возвращаем центроид ячейки + сумму людей."""
+    кластеризация). Возвращаем центроид ячейки + сумму людей.
+
+    cats — список категорий через запятую (lsi,ip,…). Если задан, цифра на
+    кружке = сумма этих категорий, и в выборку попадают только дома, где есть
+    хотя бы один человек КАЖДОЙ выбранной категории (та же AND-логика, что у
+    домов на крупном зуме)."""
     cell = 70.0 / (2 ** zoom)
-    rows = (await db.execute(text("""
+    sel = [c for c in (cats or "").split(",") if c in CAT_KEYS]
+    if sel:
+        sum_expr = " + ".join(f"(stats->>'{c}')::int" for c in sel)
+        having = " AND ".join(f"(stats->>'{c}')::int > 0" for c in sel)
+        people_sql = f"sum({sum_expr})"
+        extra_where = f" AND {having}"
+    else:
+        people_sql = "sum((stats->>'total')::int)"
+        extra_where = " AND (stats->>'total')::int > 0"
+    rows = (await db.execute(text(f"""
         SELECT avg(lat) AS clat, avg(lon) AS clon,
-               sum((stats->>'total')::int) AS people, count(*) AS n
+               {people_sql} AS people, count(*) AS n
           FROM pop_dwelling
          WHERE geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)
-           AND stats IS NOT NULL AND (stats->>'total')::int > 0
+           AND stats IS NOT NULL{extra_where}
          GROUP BY floor(lat / :cell), floor(lon / :cell)
+        HAVING {people_sql} > 0
          ORDER BY people DESC
          LIMIT 3000
     """), {"w": w, "s": s, "e": e, "n": n, "cell": cell})).all()

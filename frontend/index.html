@@ -298,6 +298,19 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   color:#fff; border:none; border-radius:5px; cursor:pointer; font-size:12px; font-weight:600;
 }
 .geo-popup .edit-btn:hover { background:#2563eb; }
+/* Много адресов на одной точке — сворачиваемый скроллируемый список */
+.geo-popup .addr-toggle {
+  margin:2px 0 6px; padding:4px 8px; background:#eef2ff; color:#3730a3;
+  border:1px solid #c7d2fe; border-radius:5px; cursor:pointer; font-size:12px; font-weight:600;
+}
+.geo-popup .addr-toggle:hover { background:#e0e7ff; }
+.geo-popup .addr-list {
+  max-height:180px; overflow-y:auto; margin:0 0 6px; padding:4px 6px;
+  border:1px solid #e2e8f0; border-radius:5px; background:#f8fafc; font-size:12px;
+}
+.geo-popup .addr-list div { padding:2px 0; border-bottom:1px solid #eef2f7; color:#334155; }
+.geo-popup .addr-list div:last-child { border-bottom:none; }
+.geo-popup .hidden { display:none; }
 
 /* Вкладки в модалке статистики ЦОССУ */
 .cossu-stats-tab {
@@ -538,7 +551,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <label class="cat-item"><input type="checkbox" value="lsi">        ЛСИ (лица с инвалидностью)</label>
     <label class="cat-item"><input type="checkbox" value="asp">        АСП</label>
     <label class="cat-item"><input type="checkbox" value="deti_do18"> Дети до 18</label>
-    <label class="cat-item"><input type="checkbox" value="trud_vozrast"> Труд. возраст</label>
+    <label class="cat-item"><input type="checkbox" value="trud_vozrast"> Трудовой возраст</label>
     <label class="cat-item"><input type="checkbox" value="working">    Работающие</label>
     <label class="cat-item"><input type="checkbox" value="student">    Студенты</label>
     <label class="cat-item"><input type="checkbox" value="pensioners"> Пенсионеры</label>
@@ -630,7 +643,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <!-- Обычный режим: дома / люди -->
   <div id="st-normal-info">
-    <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b>Людей:</b> <span id="st-people">0</span><br>
+    <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b id="st-people-label">Людей:</b> <span id="st-people">0</span><br>
     <span id="st-user" style="font-size:12px;color:#64748b"></span>
   </div>
   <!-- Режим кандасов: кандасы по городам -->
@@ -940,6 +953,13 @@ let allPlaces    = [];
 let activeConf = new Set(['high','medium','low']);
 let activeCats = new Set();
 let activeDistrict = 'all';
+
+// Короткие подписи категорий для счётчика «людей» при активном фильтре категорий
+const CAT_LABELS = {
+  lsi: 'ЛСИ', asp: 'АСП', deti_do18: 'Детей до 18', trud_vozrast: 'Труд. возраста',
+  working: 'Работающих', student: 'Студентов', pensioners: 'Пенсионеров',
+  ip: 'ИП', kandas: 'Кандасов',
+};
 
 let drawLayer    = null;
 let editingId    = null;
@@ -1300,6 +1320,7 @@ function _renderIdleStats() {
   const zoom = map ? map.getZoom() : 0;
   const hint = zoom < MIN_POINT_ZOOM ? ' — приблизьте для домов' : '';
   document.getElementById('st-region').textContent = 'Казахстан' + hint;
+  document.getElementById('st-people-label').textContent = 'Людей:';
   if (popSummary) {
     document.getElementById('st-total').textContent = popSummary.total_dwellings.toLocaleString('ru');
     document.getElementById('st-people').textContent = popSummary.total_people.toLocaleString('ru');
@@ -1330,7 +1351,8 @@ async function loadViewportPoints() {
     clusterGroup.clearLayers();
     allPlaces = [];
     _renderIdleStats();
-    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}`;
+    const catsQ = activeCats.size ? `&cats=${[...activeCats].join(',')}` : '';
+    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}${catsQ}`;
     try {
       const r = await fetch(url, { credentials: 'include' });
       if (r.ok) renderPopClusters(await r.json());
@@ -1493,6 +1515,8 @@ function updateViewStats(filteredList) {
   if (!allPlaces || !allPlaces.length || !map) return;
   const zoom = map.getZoom();
   const bounds = map.getBounds();
+  // По умолчанию подпись «Людей:»; фильтр категорий ниже может её переопределить
+  document.getElementById('st-people-label').textContent = 'Людей:';
   const hasFilters = activeCats.size > 0 || activeDistrict !== 'all' ||
     !(activeConf.has('high') && activeConf.has('medium') && activeConf.has('low') && activeConf.has('miss'));
 
@@ -1512,9 +1536,18 @@ function updateViewStats(filteredList) {
     const label = (sorted.length === 1 || topShare > 0.7)
       ? sorted[0][0]
       : sorted.length <= 3 ? sorted.map(e => e[0]).join(' / ') : 'Несколько регионов';
-    const people = pool.reduce((s, p) => s + ((p.stats && p.stats.total) || 0), 0);
+    // При активном фильтре категорий считаем именно людей выбранных категорий
+    // (напр. только ЛСИ), а не всех жителей отфильтрованных домов.
+    const cats = [...activeCats];
+    const people = cats.length
+      ? pool.reduce((s, p) => s + cats.reduce((a, c) => a + ((p.stats && p.stats[c]) || 0), 0), 0)
+      : pool.reduce((s, p) => s + ((p.stats && p.stats.total) || 0), 0);
+    const peopleLabel = cats.length
+      ? cats.map(c => CAT_LABELS[c] || c).join(' + ') + ':'
+      : 'Людей:';
     document.getElementById('st-region').textContent = label + ' (фильтр)';
     document.getElementById('st-total').textContent = pool.length.toLocaleString('ru');
+    document.getElementById('st-people-label').textContent = peopleLabel;
     document.getElementById('st-people').textContent = people.toLocaleString('ru');
     return;
   }
@@ -1888,8 +1921,10 @@ function confColor(conf) {
 }
 
 function clusterIcon(cluster) {
-  // Суммируем людей из всех дочерних маркеров (не количество маркеров)
-  const n = cluster.getAllChildMarkers().reduce((sum, m) => sum + (m._total || 0), 0);
+  // Суммируем людей из всех дочерних маркеров (не количество маркеров).
+  // При активном фильтре категорий берём _shown (число людей этих категорий),
+  // иначе — всех жителей точки.
+  const n = cluster.getAllChildMarkers().reduce((sum, m) => sum + (m._shown ?? m._total ?? 0), 0);
   const col = n > 9999 ? '#2563eb' : n > 999 ? '#0891b2' : n > 99 ? '#059669' : '#22c55e';
   const sz  = n > 9999 ? 46 : n > 999 ? 38 : 30;
   const txt = n > 999999 ? Math.round(n/1000000)+'М' : n > 999 ? Math.round(n/1000)+'к' : n;
@@ -1956,17 +1991,20 @@ function renderPlaces() {
 
   // Шаг 2: группируем по точной координате — несколько адресов на одной точке
   // объединяются в один маркер с суммарным количеством людей.
-  const coordMap = new Map(); // "lat,lon" → { places: [], total, bestConf }
+  const coordMap = new Map(); // "lat,lon" → { places: [], total, catTotal, bestConf }
   const CONF_ORDER = {high: 0, medium: 1, low: 2, miss: 3};
+  const cats = [...activeCats];   // активные категории: цифра на кружке = их сумма
 
   for (const p of visible) {
     const key = `${p.lat},${p.lon}`;
     if (!coordMap.has(key)) {
-      coordMap.set(key, { places: [], total: 0, bestConf: p.confidence });
+      coordMap.set(key, { places: [], total: 0, catTotal: 0, bestConf: p.confidence });
     }
     const bucket = coordMap.get(key);
     bucket.places.push(p);
-    bucket.total += (p.stats ? p.stats.total : 0);
+    const s = p.stats || {};
+    bucket.total += s.total || 0;
+    if (cats.length) bucket.catTotal += cats.reduce((a, c) => a + (s[c] || 0), 0);
     // Выбираем наилучшую уверенность из всех адресов на точке
     if ((CONF_ORDER[p.confidence] ?? 99) < (CONF_ORDER[bucket.bestConf] ?? 99)) {
       bucket.bestConf = p.confidence;
@@ -1977,11 +2015,14 @@ function renderPlaces() {
   for (const [key, bucket] of coordMap) {
     const p0 = bucket.places[0];
     const total = bucket.total;
+    // При активном фильтре категорий на кружке показываем число людей этих
+    // категорий (напр. только ЛСИ), иначе — всех жителей точки.
+    const shown = cats.length ? bucket.catTotal : total;
     const col   = confColor(bucket.bestConf);
-    const sz    = total > 100 ? 32 : total > 20 ? 26 : 22;
+    const sz    = shown > 100 ? 32 : shown > 20 ? 26 : 22;
     const m = L.marker([p0.lat, p0.lon], {
       icon: L.divIcon({
-        html:`<div class="bld" style="width:${sz}px;height:${sz}px;background:${col};font-size:${sz>26?11:10}px">${total}</div>`,
+        html:`<div class="bld" style="width:${sz}px;height:${sz}px;background:${col};font-size:${sz>26?11:10}px">${shown}</div>`,
         className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2],
       }),
     });
@@ -2016,6 +2057,7 @@ function renderPlaces() {
 
     m._placeData = p0;
     m._total = total;  // сумма людей в этой точке (может быть несколько адресов)
+    m._shown = shown;  // отображаемое число: при фильтре категорий — их сумма
     markers.push(m);
   }
 
@@ -2045,23 +2087,44 @@ function buildAreaPopup(name, isOblast, stats, placeCount) {
   </div>`;
 }
 
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+
+// Сворачивание/разворачивание списка адресов в попапе точки населения.
+function togglePopupAddrs(btn) {
+  const list = btn.nextElementSibling;
+  if (!list) return;
+  const hidden = list.classList.toggle('hidden');
+  const n = list.children.length;
+  btn.textContent = hidden ? `Показать адреса (${n})` : 'Скрыть адреса';
+}
+
 function buildPopup(p) {
   const s = p.stats || {};
   const canEdit = currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin');
   const confLabels = {high:'Точный адрес',medium:'Найдена улица',low:'Нечеткое',miss:'Не найдено'};
   const confColors = {high:'#166534',medium:'#854d0e',low:'#9a3412',miss:'#991b1b'};
 
-  // Несколько адресов на одной точке
-  const addrLine = p._addresses
-    ? p._addresses.join('<br>')
+  // Несколько адресов на одной точке: не вываливаем 40 строк в заголовок
+  // (попап улетал за экран) — показываем счётчик + сворачиваемый скролл-список.
+  const multi = p._addresses && p._addresses.length > 1;
+  const addrLine = multi
+    ? `${p._addresses.length} адресов на этой точке`
     : `${p.street_name}${p.house ? ', ' + p.house : ''}`;
+  const addrBlock = multi ? `
+    <button class="addr-toggle" onclick="togglePopupAddrs(this)">Показать адреса (${p._addresses.length})</button>
+    <div class="addr-list hidden">${p._addresses.map(a => `<div>${escHtml(a)}</div>`).join('')}</div>` : '';
 
   const regionLine = [p.regname || s.regname, p.rainame || s.rainame].filter(Boolean).join(' / ');
 
   return `<div class="geo-popup">
-    <h4>${addrLine}</h4>
-    ${regionLine ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">${regionLine}</div>` : ''}
-    ${!p._addresses ? `<div class="conf-line" style="color:${confColors[p.confidence]||'#64748b'}">${confLabels[p.confidence]||p.confidence}</div>` : ''}
+    <h4>${escHtml(addrLine)}</h4>
+    ${addrBlock}
+    ${regionLine ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">${escHtml(regionLine)}</div>` : ''}
+    ${!multi ? `<div class="conf-line" style="color:${confColors[p.confidence]||'#64748b'}">${confLabels[p.confidence]||p.confidence}</div>` : ''}
     <table>
       <tr><td>Всего жителей</td><td>${s.total||0}</td></tr>
       <tr><td>Мужчин / Женщин</td><td>${s.male||0} / ${s.female||0}</td></tr>
@@ -2111,17 +2174,23 @@ function resetConf() {
 // ═══════════════════════════════════════════════════════
 //  Фильтры категорий
 // ═══════════════════════════════════════════════════════
+// На мелком зуме дома не загружены — надо перезапросить кластеры с фильтром
+// категорий; на крупном достаточно перерисовать уже загруженные точки.
+function _applyCatFilter() {
+  if (map && map.getZoom() < MIN_POINT_ZOOM) loadViewportPoints();
+  else renderPlaces();
+}
 document.addEventListener('change', e => {
   if (e.target.closest('#cats-body') && e.target.type === 'checkbox') {
     activeCats.clear();
     document.querySelectorAll('#cats-body input:checked').forEach(cb => activeCats.add(cb.value));
-    renderPlaces();
+    _applyCatFilter();
   }
 });
 function clearCats() {
   document.querySelectorAll('#cats-body input').forEach(cb => cb.checked = false);
   activeCats.clear();
-  renderPlaces();
+  _applyCatFilter();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4461,7 +4530,7 @@ async function saveCoords() {
   const lon    = parseFloat(document.getElementById('coord-lon').value);
   const reason = document.getElementById('coord-reason').value.trim();
   if (isNaN(lat) || isNaN(lon)) { alert('Введите корректные координаты'); return; }
-  const r = await fetch(`${API}/api/places/${editingId}/coords`, {
+  const r = await fetch(`${API}/api/pop/${editingId}/coords`, {
     method:'PATCH', credentials:'include',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({lat, lon, reason: reason||null}),
