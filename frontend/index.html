@@ -1271,10 +1271,104 @@ function initMap() {
     // ЦОССУ-режим: данные загружаем для статистики, маркеры пока не показываем
     loadCossuData();
   } else {
-    loadPlaces();
+    // Обычный режим: население грузим по видимому окну карты (viewport),
+    // а не все 1,12М точек разом. Сводку по областям — для сайдбара.
+    loadPopSummary();
+    loadViewportPoints();
+    map.on('moveend zoomend', _scheduleViewportLoad);
   }
   // Подсветка границ включена по умолчанию
   toggleDistricts();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Население: загрузка точек по видимому окну (viewport)
+// ═══════════════════════════════════════════════════════
+const MIN_POINT_ZOOM = 14;   // ниже — точки не грузим (видны только границы)
+let popSummary = null;
+let _vpTimer = null;
+
+async function loadPopSummary() {
+  try {
+    const r = await fetch('/api/pop/summary', {credentials: 'include'});
+    if (r.ok) { popSummary = await r.json(); if (!allPlaces.length) _renderIdleStats(); }
+  } catch (e) { console.error('pop summary:', e); }
+}
+
+// Показывает тоталы по всей стране, когда точки не загружены (мелкий зум)
+function _renderIdleStats() {
+  const zoom = map ? map.getZoom() : 0;
+  const hint = zoom < MIN_POINT_ZOOM ? ' — приблизьте для домов' : '';
+  document.getElementById('st-region').textContent = 'Казахстан' + hint;
+  if (popSummary) {
+    document.getElementById('st-total').textContent = popSummary.total_dwellings.toLocaleString('ru');
+    document.getElementById('st-people').textContent = popSummary.total_people.toLocaleString('ru');
+  }
+}
+
+function _scheduleViewportLoad() {
+  clearTimeout(_vpTimer);
+  _vpTimer = setTimeout(loadViewportPoints, 350);
+}
+
+let popClusterLayer = null;
+let _popHidden = false;   // галочка «Скрыть точки» — прячет и дома, и кружки
+
+function _fmtPeople(x) {
+  if (x >= 1e6) return (x / 1e6).toFixed(1).replace('.0', '') + 'М';
+  if (x >= 1e3) return (x / 1e3).toFixed(x < 1e4 ? 1 : 0).replace('.0', '') + 'к';
+  return String(x);
+}
+
+async function loadViewportPoints() {
+  if (!map || isKandasRole() || isCossuRole()) return;
+  if (_popHidden) return;   // точки скрыты — не подгружаем при панораме
+  const b = map.getBounds();
+  if (map.getZoom() < MIN_POINT_ZOOM) {
+    // Мелкий зум — вместо домов агрегированные кружки (город → 1 кружок,
+    // ближе → по районам).
+    clusterGroup.clearLayers();
+    allPlaces = [];
+    _renderIdleStats();
+    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}`;
+    try {
+      const r = await fetch(url, { credentials: 'include' });
+      if (r.ok) renderPopClusters(await r.json());
+    } catch (e) { console.error('pop clusters:', e); }
+    return;
+  }
+  // Зум 14+ — реальные дома, агрегированные кружки убираем.
+  if (popClusterLayer) popClusterLayer.clearLayers();
+  const url = `/api/pop?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&limit=20000`;
+  try {
+    const r = await fetch(url, { credentials: 'include' });
+    if (!r.ok) return;
+    const data = await r.json();
+    allPlaces = data.points || [];
+    buildRegionAggregates();
+    renderPlaces();
+  } catch (e) { console.error('pop viewport:', e); }
+}
+
+function renderPopClusters(cells) {
+  if (!popClusterLayer) popClusterLayer = L.layerGroup().addTo(map);
+  popClusterLayer.clearLayers();
+  for (const c of cells) {
+    const p = c.people;
+    // Цвет/класс — как у обычных кластеров (.cls), чтобы стиль совпадал.
+    const col = p > 9999 ? '#2563eb' : p > 999 ? '#0891b2' : p > 99 ? '#059669' : '#22c55e';
+    const sz  = p > 1e6 ? 58 : p > 1e5 ? 50 : p > 1e4 ? 44 : p > 999 ? 38 : 30;
+    const m = L.marker([c.lat, c.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="cls" style="width:${sz}px;height:${sz}px;background:${col};font-size:${sz > 44 ? 13 : 11}px">${_fmtPeople(p)}</div>`,
+        iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2],
+      }),
+    });
+    m.bindTooltip(`${p.toLocaleString('ru')} чел. · ${c.n} точек`, { direction: 'top' });
+    m.on('click', () => map.flyTo([c.lat, c.lon], Math.min(map.getZoom() + 2, 15), { duration: 0.8 }));
+    popClusterLayer.addLayer(m);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1354,7 +1448,7 @@ function buildRegionAggregates() {
     totalAggregate.houses++;
     totalAggregate.people += (p.stats && p.stats.total) || 0;
     const rn = p.stats?.rainame;
-    if (rn) regionRainameMap[region].add(rn);
+    if (rn && !rn.includes('ЗАГРАНИЦА')) regionRainameMap[region].add(rn);
   }
   // Конвертируем Set → отсортированный массив
   for (const r in regionRainameMap) {
@@ -1745,72 +1839,21 @@ async function fetchDistricts() {
         // В кандас-/ЦОССУ-режимах клик по области/району лишь подсвечивает границу.
         if (isKandasRole() || isCossuRole()) return;
 
-        // ── Агрегация статистики по KATO-полям (rainame / regname) ──────
-        // НИКАКОГО bbox для L68 — иначе Целиноградский район (bbox вокруг Астаны)
-        // захватит все астанинские адреса. Только точное совпадение с полем в БД.
-        const bb = feature.properties?.bbox; // [W, S, E, N]
-        const agg = {total:0,male:0,female:0,lsi:0,asp:0,
-                     deti_do18:0,trud_vozrast:0,working:0,
-                     student:0,pensioners:0,ip:0,kandas:0};
-        let placeCount = 0;
-
-        if (showOblast) {
-          // ── Регионы (L4): сопоставляем stats.regname ───────────────────
-          // Маппинг аббревиатур GeoJSON → KATO regname в БД
-          const REGION_MAP = {
-            'СКО':  'Северо-Казахстанская область',
-            'ВКО':  'Восточно-Казахстанская область',
-            'ЗКО':  'Западно-Казахстанская область',
-            'Абай': 'Абайская область',
-          };
-          const katoRegname = REGION_MAP[name] || name;
-          if (allPlaces?.length) {
-            for (const pl of allPlaces) {
-              const rv = pl.stats?.regname || '';
-              // "Карагандинская" includes в "Карагандинская область" и наоборот
-              if (rv !== katoRegname && !rv.includes(katoRegname) && !katoRegname.includes(rv)) continue;
-              const s = pl.stats || {};
-              placeCount++;
-              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
-            }
-          }
-          // Fallback bbox для регионов — только если совсем нет данных
-          if (placeCount === 0 && bb && allPlaces?.length) {
-            const [bW, bS, bE, bN] = bb;
-            for (const pl of allPlaces) {
-              if (pl.lat == null || pl.lon == null) continue;
-              if (pl.lat < bS || pl.lat > bN || pl.lon < bW || pl.lon > bE) continue;
-              const s = pl.stats || {};
-              placeCount++;
-              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
-            }
-          }
-        } else {
-          // ── Районы (L68): ТОЛЬКО stats.rainame, никакого bbox ──────────
-          // Казахские OSM-имена Астаны → русские KATO-значения в БД
-          const RAION_MAP = {
-            'Есіл ауданы':     'район Есиль',
-            'Алматы ауданы':   'район Алматы',
-            'Сарыарқа ауданы': 'район Сарыарка',
-            'Байқоңыр ауданы': 'район Байқоңыр',
-            'Нұра ауданы':     'район Нура',
-          };
-          const katoRainame = RAION_MAP[name] || name;
-          if (allPlaces?.length) {
-            for (const pl of allPlaces) {
-              if ((pl.stats?.rainame || '') !== katoRainame) continue;
-              const s = pl.stats || {};
-              placeCount++;
-              for (const k of Object.keys(agg)) agg[k] += (s[k] || 0);
-            }
-          }
-        }
-
-        // ── Показываем попап как у обычного маркера ──────────────────────
-        L.popup({ maxWidth: 300, autoPan: true })
+        // ── Статистика границы — с сервера (пространственно, ST_Contains) ──
+        // Не зависит от viewport и от совпадения названий: считается по точкам
+        // внутри полигона. level=oblast → id_reg, level=raion → id_rai.
+        const level = showOblast ? 'oblast' : 'raion';
+        const areaId = showOblast ? feature.properties?.id_reg : feature.properties?.id_rai;
+        const popup = L.popup({ maxWidth: 300, autoPan: true })
           .setLatLng(e.latlng)
-          .setContent(buildAreaPopup(name, showOblast, agg, placeCount))
+          .setContent(buildAreaPopup(name, showOblast, {}, '…'))
           .openOn(map);
+        if (areaId != null) {
+          fetch(`/api/pop/area?level=${level}&id=${areaId}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) popup.setContent(buildAreaPopup(name, showOblast, d.stats || {}, d.n || 0)); })
+            .catch(() => {});
+        }
       });
       legendItems.push({name, col});
     },
@@ -1949,49 +1992,26 @@ function renderPlaces() {
 
     let cachedPopupData = null;
 
-    m.on('popupopen', async () => {
-      if (cachedPopupData) {
-        m.setPopupContent(buildPopup(cachedPopupData));
-        m.getPopup()?.update();
-        return;
+    // Данные (stats, адрес, регион) уже в точке из places.json — рисуем попап
+    // без обращения к API.
+    m.on('popupopen', () => {
+      if (!cachedPopupData) {
+        if (bucket.places.length === 1) {
+          cachedPopupData = p0;
+        } else {
+          // Несколько адресов на одной точке — суммируем их stats.
+          const merged = {...bucket.places[0]};
+          const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
+          merged.stats = {};
+          for (const k of keys) merged.stats[k] = bucket.places.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
+          merged.stats.regname = bucket.places[0].stats?.regname || null;
+          merged.stats.rainame = bucket.places[0].stats?.rainame || null;
+          merged._addresses = bucket.places.map(p => p.street_name);
+          cachedPopupData = merged;
+        }
       }
-
-      if (bucket.places.length === 1) {
-        try {
-          const rr = await fetch(`${API}/api/places/${p0.id}`, {credentials: 'include'});
-          if (rr.ok) {
-            const full = await rr.json();
-            cachedPopupData = full;
-            const idx = allPlaces.findIndex(x => x.id === p0.id);
-            if (idx !== -1) allPlaces[idx] = {...allPlaces[idx], ...full};
-            m.setPopupContent(buildPopup(full));
-            m.getPopup()?.update();
-          }
-        } catch {}
-      } else {
-        // Несколько адресов на одной точке — грузим все и суммируем
-        try {
-          const results = await Promise.all(
-            bucket.places.map(p =>
-              fetch(`${API}/api/places/${p.id}`, {credentials: 'include'}).then(r => r.ok ? r.json() : null)
-            )
-          );
-          const valid = results.filter(Boolean);
-          if (valid.length) {
-            const merged = {...valid[0]};
-            const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
-            merged.stats = {};
-            for (const k of keys) merged.stats[k] = valid.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
-            merged._addresses = valid.map(p => `${p.street_name}${p.house ? ', ' + p.house : ''}`);
-            // Для нескольких адресов берём регион/район из первого
-            merged.regname = valid[0].regname || null;
-            merged.rainame = valid[0].rainame || null;
-            cachedPopupData = merged;
-            m.setPopupContent(buildPopup(merged));
-            m.getPopup()?.update();
-          }
-        } catch {}
-      }
+      m.setPopupContent(buildPopup(cachedPopupData));
+      m.getPopup()?.update();
     });
 
     m._placeData = p0;
@@ -2036,7 +2056,7 @@ function buildPopup(p) {
     ? p._addresses.join('<br>')
     : `${p.street_name}${p.house ? ', ' + p.house : ''}`;
 
-  const regionLine = [p.regname, p.rainame].filter(Boolean).join(' / ');
+  const regionLine = [p.regname || s.regname, p.rainame || s.rainame].filter(Boolean).join(' / ');
 
   return `<div class="geo-popup">
     <h4>${addrLine}</h4>
@@ -2126,12 +2146,16 @@ function toggleHideMarkers(hide) {
     }
     return;
   }
-  // Обычный режим — кластер домов
+  // Обычный режим (население) — и дома (clusterGroup), и кружки-агрегаты (popClusterLayer)
   if (!clusterGroup) return;
+  _popHidden = hide;
   if (hide) {
     if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+    if (popClusterLayer && map.hasLayer(popClusterLayer)) map.removeLayer(popClusterLayer);
   } else {
     if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+    if (popClusterLayer && !map.hasLayer(popClusterLayer)) map.addLayer(popClusterLayer);
+    loadViewportPoints();
   }
 }
 
@@ -4283,7 +4307,7 @@ function openListModal() {
 
 async function loadListRegions() {
   try {
-    const r = await fetch(`${API}/api/places/regions?kind=house`, {credentials: 'include'});
+    const r = await fetch(`${API}/api/pop/regions?kind=house`, {credentials: 'include'});
     if (!r.ok) return;
     listRegions = await r.json();
     const cityEl = document.getElementById('list-city');
@@ -4343,7 +4367,7 @@ async function listLoad() {
   if (city)    params.set('city', city);
   if (rainame) params.set('rainame', rainame);
 
-  const r = await fetch(`${API}/api/places/list?${params}`, {credentials:'include'});
+  const r = await fetch(`${API}/api/pop/list?${params}`, {credentials:'include'});
   if (!r.ok) return;
   const data = await r.json();
 
