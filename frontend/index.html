@@ -4548,8 +4548,7 @@ async function saveCoords() {
     allPlaces[idx].confidence = updated.confidence;
     allPlaces[idx].source     = updated.source;
     renderPlaces();
-    // Центрируем карту на новой точке
-    map.setView([updated.lat, updated.lon], Math.max(map.getZoom(), 16), {animate: true});
+    // Карту НЕ двигаем — остаёмся на месте, где стояла точка (по просьбе).
   } else {
     loadPlaces();
   }
