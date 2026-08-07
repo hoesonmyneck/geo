@@ -51,6 +51,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   padding:13px 16px; background:#1e293b; color:#fff;
   font-size:14px; font-weight:600; letter-spacing:.2px; flex-shrink:0;
   display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; z-index:5;
 }
 #sidebar-header span { font-size:12px; font-weight:400; color:#94a3b8; cursor:pointer; }
 #sidebar-header span:hover { color:#e2e8f0; }
@@ -138,11 +139,20 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 }
 
 /* ── Панель итогов (правый верх) ── */
-#stats-panel {
+/* Правая колонка: статистика → линза → выбор слоя карты, сверху вниз */
+#right-stack {
   position:fixed; top:12px; right:12px; z-index:999;
+  display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+}
+#stats-panel {
   background:#fff; border-radius:8px;
   box-shadow:0 2px 10px rgba(0,0,0,.16);
   padding:10px 14px; font-size:13px; line-height:1.75;
+}
+/* Контрол слоёв Leaflet, перенесённый в правую колонку — сбрасываем его
+   абсолютное позиционирование, чтобы он встал в поток под линзой. */
+#right-stack .leaflet-control-layers {
+  margin:0; position:static; float:none;
 }
 
 /* ── Панель статистики выделенной области ── */
@@ -311,6 +321,20 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 .geo-popup .addr-list div { padding:2px 0; border-bottom:1px solid #eef2f7; color:#334155; }
 .geo-popup .addr-list div:last-child { border-bottom:none; }
 .geo-popup .hidden { display:none; }
+
+/* ── Линза выбора раздела (в правой колонке, под статистикой) ── */
+#section-lens {
+  display:none; flex-direction:column; gap:4px;
+  background:#fff; padding:5px; border-radius:10px;
+  box-shadow:0 4px 16px rgba(15,23,42,.18); border:1px solid #e2e8f0;
+}
+#section-lens .sec-btn {
+  padding:7px 14px; border:none; border-radius:7px; cursor:pointer;
+  font-size:13px; font-weight:600; color:#475569; background:#f1f5f9;
+  text-align:left; transition:background .15s, color .15s;
+}
+#section-lens .sec-btn:hover { background:#e2e8f0; }
+#section-lens .sec-btn.active { background:#2563eb; color:#fff; }
 
 /* Вкладки в модалке статистики ЦОССУ */
 .cossu-stats-tab {
@@ -484,7 +508,6 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       <button class="action-btn" id="draw-clear-btn" style="display:none;margin-top:4px" onclick="clearDraw()">Очистить область</button>
     </div>
     <div id="admin-tools" style="display:none;margin-top:4px">
-      <button class="action-btn primary" onclick="openImportModal()" style="margin-bottom:4px">Загрузить данные (xlsx)</button>
       <button class="action-btn" onclick="openUsersModal()" style="width:100%">Управление пользователями</button>
     </div>
   </div>
@@ -614,6 +637,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 <!-- Карта -->
 <div id="map"></div>
 
+<!-- Правая колонка сверху: статистика → линза разделов → выбор слоя карты -->
+<div id="right-stack">
 <!-- Панель итогов (правый верх) -->
 <div id="stats-panel" style="display:none">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -661,7 +686,11 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div id="st-cossu-info" style="display:none;font-size:12px;line-height:1.8">
     <span id="st-cossu-counts"></span>
   </div>
-</div>
+</div><!-- /stats-panel -->
+  <!-- Линза выбора раздела (видна если доступно >1 раздела) -->
+  <div id="section-lens"></div>
+  <!-- Сюда переносится контрол выбора слоя карты (Leaflet), чтобы был под линзой -->
+</div><!-- /right-stack -->
 
 <!-- Панель статистики выделенной области -->
 <div id="sel-panel">
@@ -754,11 +783,19 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 
 <!-- ── Модальное окно: управление пользователями (для admin) ── -->
 <div class="modal-overlay" id="users-modal">
-  <div class="coord-box" style="width:500px;max-height:80vh;overflow-y:auto">
-    <h3>Пользователи</h3>
+  <div class="coord-box" style="width:1000px;max-width:96vw;max-height:80vh;padding:0;display:flex;flex-direction:column;overflow:hidden">
+    <!-- Фиксированный заголовок с крестиком — тело прокручивается отдельно -->
+    <div style="flex-shrink:0;background:#fff;padding:16px 24px 12px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">Пользователи</h3>
+      <button onclick="closeUsersModal()" title="Закрыть"
+        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+    </div>
+    <!-- Тело: слева форма (не двигается), справа прокручиваемый список -->
+    <div style="display:flex;gap:20px;padding:20px 24px 24px;flex:1;min-height:0;overflow:hidden">
 
-    <!-- Форма создания -->
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">
+    <!-- Левая колонка: форма создания (фиксированная) -->
+    <div style="width:400px;flex-shrink:0;overflow-y:auto">
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px">
       <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#374151">Новый пользователь</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div>
@@ -770,7 +807,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
           <input id="nu-pass" type="password" placeholder="••••••" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;align-items:end">
         <div>
           <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">ИИН (для 2FA через ЭЦП)</label>
           <input id="nu-iin" type="text" inputmode="numeric" maxlength="12" placeholder="12 цифр (необязательно)"
@@ -782,19 +819,24 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
             style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"/>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
-        <div>
-          <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Роль</label>
-          <select id="nu-role" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
-            <option value="viewer">viewer — только просмотр</option>
-            <option value="editor">editor — может редактировать координаты</option>
-            <option value="admin">admin — полный доступ</option>
-            <option value="viewer_kandas">viewer_kandas — только реестр кандасов</option>
-            <option value="admin_kandas">admin_kandas — кандасы + редактирование</option>
-            <option value="viewer_cossu">viewer_cossu — только реестр ЦОССУ</option>
-            <option value="admin_cossu">admin_cossu — ЦОССУ + редактирование</option>
-          </select>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Уровень доступа</label>
+        <select id="nu-role" onchange="_onRoleChange()" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#374151">
+          <option value="viewer">Пользователь — только просмотр</option>
+          <option value="editor">Редактор — может редактировать</option>
+          <option value="admin">Админ — все разделы + управление</option>
+        </select>
+      </div>
+      <div id="nu-sections-wrap" style="margin-bottom:10px">
+        <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px">Разделы</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="population"> Население</label>
+          <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="kandas"> Кандасы</label>
+          <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="cossu"> ЦОССУ</label>
         </div>
+        <div id="nu-sections-admin-hint" style="display:none;font-size:11px;color:#94a3b8;margin-top:4px">Админ видит все разделы автоматически.</div>
+      </div>
+      <div style="text-align:right">
         <button onclick="createUser()" style="white-space:nowrap;padding:7px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Создать</button>
       </div>
       <div style="margin-top:6px;font-size:11px;color:#94a3b8">
@@ -802,14 +844,15 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
       </div>
       <div id="nu-status" style="margin-top:8px;font-size:12px;min-height:16px"></div>
     </div>
+    </div><!-- /левая колонка -->
 
-    <!-- Список пользователей -->
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#374151">Существующие пользователи</div>
-    <div id="users-list" style="font-size:13px"></div>
+    <!-- Правая колонка: список пользователей (прокручивается) -->
+    <div style="flex:1;min-height:0;overflow-y:auto">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#374151">Существующие пользователи</div>
+      <div id="users-list" style="font-size:13px"></div>
+    </div><!-- /правая колонка -->
 
-    <div class="btn-row" style="margin-top:16px">
-      <button class="btn-secondary" onclick="closeUsersModal()">Закрыть</button>
-    </div>
+    </div><!-- /тело -->
   </div>
 </div>
 
@@ -1170,12 +1213,60 @@ async function doLogout() {
 // ═══════════════════════════════════════════════════════
 //  Старт
 // ═══════════════════════════════════════════════════════
-function isKandasRole() {
-  return currentUser && (currentUser.role === 'admin_kandas' || currentUser.role === 'viewer_kandas');
+// ── Разделы приложения ───────────────────────────────────────────────────────
+// role — уровень доступа (admin/editor/viewer), sections — список разделов.
+// Активный раздел на эту загрузку страницы = currentSection. Переключение —
+// линзой справа (сохраняет выбор и перезагружает страницу).
+let currentSection = null;
+const SECTION_LABELS = { population: 'Население', kandas: 'Кандасы', cossu: 'ЦОССУ' };
+const SECTION_ORDER  = ['population', 'kandas', 'cossu'];
+
+function userSections() {
+  if (!currentUser) return [];
+  if (currentUser.role === 'admin') return SECTION_ORDER.slice();  // админ видит всё
+  const s = currentUser.sections || [];
+  return SECTION_ORDER.filter(x => s.includes(x));
+}
+
+function resolveSection() {
+  if (publicCossu) return 'cossu';
+  const avail = userSections();
+  if (!avail.length) return 'population';        // подстраховка
+  const saved = localStorage.getItem('geo_section');
+  if (saved && avail.includes(saved)) return saved;
+  return avail.includes('population') ? 'population' : avail[0];
+}
+
+function switchSection(sec) {
+  if (sec === currentSection) return;
+  localStorage.setItem('geo_section', sec);
+  location.reload();
+}
+
+// Раздел определяет режим (раньше это делала роль)
+function isKandasRole() { return currentSection === 'kandas'; }
+function isCossuRole()  { return currentSection === 'cossu'; }
+// Может ли пользователь редактировать в текущем разделе (уровень editor/admin)
+function canEditCurrent() {
+  return currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin');
+}
+
+// Линза выбора раздела (справа). Показываем только если разделов больше одного.
+function renderSectionLens() {
+  const avail = userSections();
+  const host = document.getElementById('section-lens');
+  if (!host) return;
+  if (avail.length <= 1) { host.style.display = 'none'; return; }
+  host.innerHTML = avail.map(s =>
+    `<button class="sec-btn${s === currentSection ? ' active' : ''}" onclick="switchSection('${s}')">${SECTION_LABELS[s] || s}</button>`
+  ).join('');
+  host.style.display = 'flex';
 }
 
 function startApp() {
   document.getElementById('auth-overlay').style.display = 'none';
+  currentSection = resolveSection();   // определяем активный раздел ДО веток ниже
+  renderSectionLens();
   const label = currentUser.fio ? currentUser.fio : currentUser.login;
   document.getElementById('user-label').textContent = label + ' ✕';
 
@@ -1245,9 +1336,11 @@ function startApp() {
     document.querySelectorAll('[onclick="openCossuModal()"]').forEach(el => el.style.display = 'none');
     document.querySelectorAll('[onclick="openCossuStats()"]').forEach(el => el.style.display = 'none');
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
-    if (currentUser.role === 'admin') {
-      document.getElementById('admin-tools').style.display = 'block';
-    }
+  }
+
+  // Управление пользователями доступно админу в любом разделе
+  if (currentUser.role === 'admin') {
+    document.getElementById('admin-tools').style.display = 'block';
   }
 
   initMap();
@@ -1267,10 +1360,17 @@ function initMap() {
     'Рельеф':     L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopoMap', maxZoom:17}),
   };
   baseLayers['Стандарт'].addTo(map);
+  const layerTopRight = !(isKandasRole() || isCossuRole());
   const layerCtrl = L.control.layers(baseLayers, {}, {
-    position: (isKandasRole() || isCossuRole()) ? 'bottomleft' : 'topright',
+    position: layerTopRight ? 'topright' : 'bottomleft',
     collapsed: true
   }).addTo(map);
+  // В обычном режиме переносим контрол слоёв в правую колонку — под линзу,
+  // чтобы шло: статистика → линза → выбор слоя.
+  if (layerTopRight) {
+    const stack = document.getElementById('right-stack');
+    if (stack) stack.appendChild(layerCtrl.getContainer());
+  }
 
   clusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
@@ -1352,7 +1452,11 @@ async function loadViewportPoints() {
     allPlaces = [];
     _renderIdleStats();
     const catsQ = activeCats.size ? `&cats=${[...activeCats].join(',')}` : '';
-    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}${catsQ}`;
+    // Фильтр уверенности: если выбраны не все 4 уровня — передаём список,
+    // чтобы кружки на мелком зуме тоже скрывали отфильтрованные дома.
+    const confArr = [...activeConf];
+    const confQ = confArr.length < 4 ? `&conf=${confArr.join(',')}` : '';
+    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}${catsQ}${confQ}`;
     try {
       const r = await fetch(url, { credentials: 'include' });
       if (r.ok) renderPopClusters(await r.json());
@@ -2161,22 +2265,23 @@ function toggleConf(conf) {
   const el = document.querySelector(`.conf-item[data-conf="${conf}"]`);
   if (activeConf.has(conf)) { activeConf.delete(conf); el.classList.add('off'); }
   else { activeConf.add(conf); el.classList.remove('off'); }
-  renderPlaces();
+  _applyFilters();
 }
 function resetConf() {
   ['high','medium','low','miss'].forEach(c => {
     activeConf.add(c);
     document.querySelector(`.conf-item[data-conf="${c}"]`).classList.remove('off');
   });
-  renderPlaces();
+  _applyFilters();
 }
 
 // ═══════════════════════════════════════════════════════
 //  Фильтры категорий
 // ═══════════════════════════════════════════════════════
-// На мелком зуме дома не загружены — надо перезапросить кластеры с фильтром
-// категорий; на крупном достаточно перерисовать уже загруженные точки.
-function _applyCatFilter() {
+// На мелком зуме дома не загружены — надо перезапросить кластеры с текущими
+// фильтрами (категории + уверенность); на крупном достаточно перерисовать
+// уже загруженные точки.
+function _applyFilters() {
   if (map && map.getZoom() < MIN_POINT_ZOOM) loadViewportPoints();
   else renderPlaces();
 }
@@ -2184,13 +2289,13 @@ document.addEventListener('change', e => {
   if (e.target.closest('#cats-body') && e.target.type === 'checkbox') {
     activeCats.clear();
     document.querySelectorAll('#cats-body input:checked').forEach(cb => activeCats.add(cb.value));
-    _applyCatFilter();
+    _applyFilters();
   }
 });
 function clearCats() {
   document.querySelectorAll('#cats-body input').forEach(cb => cb.checked = false);
   activeCats.clear();
-  _applyCatFilter();
+  _applyFilters();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2819,7 +2924,7 @@ function renderKandasList() {
     container.innerHTML = '<div style="color:#94a3b8;text-align:center">Нет данных</div>';
     return;
   }
-  const isAdminKandas = currentUser && currentUser.role === 'admin_kandas';
+  const isAdminKandas = canEditCurrent();   // раздел kandas активен + уровень editor/admin
   container.innerHTML = kandasData.map(k => {
     const addr = [k.oblast, k.raion, k.city, k.street, k.house, k.apt ? `кв.${k.apt}` : '']
       .filter(Boolean).join(', ');
@@ -3036,9 +3141,7 @@ let cossuData = [];      // массив учреждений (каждое со
 // activeTab[org_bin] = индекс активной вкладки (-1 = "Общее")
 const cossuActiveTab = {};
 
-function isCossuRole() {
-  return currentUser && (currentUser.role === 'admin_cossu' || currentUser.role === 'viewer_cossu');
-}
+// isCossuRole() определён выше (по currentSection)
 
 // Слой маркеров ЦОССУ
 let cossuLayer = null;
@@ -4120,7 +4223,7 @@ function renderCossuCard(inst) {
 }
 
 function _renderCossuSummary(inst) {
-  const isAdminCossu = currentUser && currentUser.role === 'admin_cossu';
+  const isAdminCossu = canEditCurrent();   // раздел cossu активен + уровень editor/admin
   const hasCoords = inst.lat != null && inst.lon != null;
   const stats = [
     ['Койко-мест (факт)', inst.total_fakt_koika_mesto],
@@ -4199,7 +4302,7 @@ function setCossuTab(orgBin, idx) {
   renderCossuList();
 }
 
-// ── Установка координат ЦОССУ (admin_cossu) ─────────────────────────────────
+// ── Установка координат ЦОССУ (раздел cossu, уровень editor/admin) ──────────
 // Координаты задаются на уровне учреждения (org_bin), а не отдельного отделения.
 // Все отделения одного БИН получают одинаковые координаты.
 let _cossuSetMode = null;   // org_bin учреждения для установки координат
@@ -4633,11 +4736,12 @@ async function deleteKandasPhoto(id) {
 //  Запуск
 // ═══════════════════════════════════════════════════════
 // Публичный вход в раздел ЦОССУ без авторизации: ?mode=cossu-public.
-// Ставим псевдо-роль viewer_cossu, чтобы прошёл весь ЦОССУ-путь, и стартуем
-// сразу, минуя окно логина. Кнопки статистики/списка скрываются в startApp.
+// Псевдо-пользователь: viewer с доступом только к ЦОССУ. publicCossu форсит
+// currentSection='cossu' и скрывает линзу (доступен один раздел). Кнопки
+// статистики/списка скрываются в startApp.
 if (new URLSearchParams(location.search).get('mode') === 'cossu-public') {
   publicCossu = true;
-  currentUser = { role: 'viewer_cossu', login: 'public', fio: 'ЦОССУ — публичный просмотр' };
+  currentUser = { role: 'viewer', sections: ['cossu'], login: 'public', fio: 'ЦОССУ — публичный просмотр' };
   startApp();
 } else {
   checkAuth();
@@ -4665,17 +4769,28 @@ async function refreshUsersList() {
     const users = await r.json();
     if (!users.length) { el.innerHTML = '<span style="color:#94a3b8">Нет пользователей</span>'; return; }
 
-    const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb', admin_kandas:'#7c3aed', viewer_kandas:'#9333ea', admin_cossu:'#0891b2', viewer_cossu:'#0e7490'};
-    const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff', admin_kandas:'#f5f3ff', viewer_kandas:'#faf5ff', admin_cossu:'#ecfeff', viewer_cossu:'#cffafe'};
+    const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb'};
+    const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff'};
+    const roleLabel = {admin:'Админ', editor:'Редактор', viewer:'Пользователь'};
+    const secLabel  = {population:'Население', kandas:'Кандасы', cossu:'ЦОССУ'};
     el.innerHTML = users.map(u => `
       <div style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
           <div style="min-width:0;flex:1">
             <span style="font-weight:600">${u.login}</span>
-            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${u.role}</span>
+            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${roleLabel[u.role]||u.role}</span>
             ${!u.is_active ? '<span style="margin-left:6px;font-size:11px;color:#94a3b8">(неактивен)</span>' : ''}
             ${u.fio ? `<div style="font-size:11px;color:#475569;margin-top:2px">${u.fio}</div>` : ''}
-            <div style="font-size:11px;color:#64748b;margin-top:2px">
+            ${u.role === 'admin'
+              ? '<div style="margin-top:5px;font-size:11px;color:#94a3b8">Разделы: все (админ)</div>'
+              : `<div style="margin-top:5px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                   <span style="font-size:11px;color:#64748b">Разделы:</span>
+                   ${['population','kandas','cossu'].map(s => `
+                     <label style="font-size:11px;color:#334155;display:inline-flex;align-items:center;gap:3px;cursor:pointer">
+                       <input type="checkbox" data-uid="${u.id}" value="${s}" ${(u.sections||[]).includes(s) ? 'checked' : ''} onchange="updateUserSections(${u.id})"> ${secLabel[s]}
+                     </label>`).join('')}
+                 </div>`}
+            <div style="font-size:11px;color:#64748b;margin-top:4px">
               ${u.iin
                 ? `<span style="color:#0891b2;font-weight:600">ИИН ${u.iin}</span> <span style="color:#94a3b8">— 2FA через ЭЦП</span>`
                 : '<span style="color:#94a3b8">без ИИН — вход только по паролю</span>'}
@@ -4703,6 +4818,31 @@ async function refreshUsersList() {
   } catch { el.textContent = 'Ошибка'; }
 }
 
+// Изменить доступные разделы пользователя (чекбоксы в списке)
+async function updateUserSections(id) {
+  const secs = [...document.querySelectorAll(`input[data-uid="${id}"]:checked`)].map(cb => cb.value);
+  if (!secs.length) { alert('У пользователя должен быть хотя бы один раздел'); await refreshUsersList(); return; }
+  try {
+    const r = await fetch(`${API}/api/users/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sections: secs}),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert(e.detail || 'Ошибка');
+      await refreshUsersList();
+    }
+  } catch { alert('Ошибка сети'); await refreshUsersList(); }
+}
+
+// Админ выбирает admin → чекбоксы разделов не нужны (видит всё)
+function _onRoleChange() {
+  const isAdmin = document.getElementById('nu-role').value === 'admin';
+  document.querySelectorAll('.nu-sec').forEach(cb => { cb.disabled = isAdmin; });
+  document.getElementById('nu-sections-admin-hint').style.display = isAdmin ? 'block' : 'none';
+}
+
 async function createUser() {
   const login = document.getElementById('nu-login').value.trim();
   const pass  = document.getElementById('nu-pass').value;
@@ -4710,8 +4850,12 @@ async function createUser() {
   const iin   = document.getElementById('nu-iin').value.trim();
   const fio   = document.getElementById('nu-fio').value.trim();
   const st    = document.getElementById('nu-status');
+  const sections = [...document.querySelectorAll('.nu-sec:checked')].map(cb => cb.value);
 
   if (!login || !pass) { st.style.color = '#dc2626'; st.textContent = 'Заполните логин и пароль'; return; }
+  if (role !== 'admin' && !sections.length) {
+    st.style.color = '#dc2626'; st.textContent = 'Выберите хотя бы один раздел'; return;
+  }
   if (iin && !/^\d{12}$/.test(iin)) {
     st.style.color = '#dc2626'; st.textContent = 'ИИН должен состоять из 12 цифр';
     return;
@@ -4722,7 +4866,7 @@ async function createUser() {
     const r = await fetch(`${API}/api/users`, {
       method: 'POST', credentials: 'include',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({login, password: pass, role, iin: iin || null, fio: fio || null}),
+      body: JSON.stringify({login, password: pass, role, sections, iin: iin || null, fio: fio || null}),
     });
     if (r.ok) {
       st.style.color = '#166534'; st.textContent = `Пользователь "${login}" создан`;
@@ -4730,6 +4874,7 @@ async function createUser() {
       document.getElementById('nu-pass').value = '';
       document.getElementById('nu-iin').value = '';
       document.getElementById('nu-fio').value = '';
+      document.querySelectorAll('.nu-sec').forEach(cb => { cb.checked = false; });
       await refreshUsersList();
     } else {
       const err = await r.json();

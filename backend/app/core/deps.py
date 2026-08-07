@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
-from app.db.models import User, UserRole
+from app.db.models import EDIT_ROLES, User, UserRole, effective_sections
 from app.db.session import get_db
 
 
@@ -46,3 +46,32 @@ def require_role(*roles: UserRole):
 
 require_editor = require_role(UserRole.editor, UserRole.admin)
 require_admin  = require_role(UserRole.admin)
+
+
+def require_section(section: str):
+    """Доступ к разделу (любой уровень — просмотр разрешён)."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if section not in effective_sections(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No access to section '{section}'",
+            )
+        return current_user
+    return _check
+
+
+def require_section_edit(section: str):
+    """Правки в разделе: нужен доступ к разделу И уровень editor/admin."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if section not in effective_sections(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No access to section '{section}'",
+            )
+        if current_user.role not in EDIT_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Editor access required",
+            )
+        return current_user
+    return _check

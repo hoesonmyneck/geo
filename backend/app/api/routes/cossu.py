@@ -11,7 +11,7 @@ from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, get_current_user
-from app.db.models import Cossu, User, UserRole, COSSU_ROLES
+from app.db.models import Cossu, User, EDIT_ROLES, effective_sections
 
 router = APIRouter(prefix="/cossu", tags=["cossu"])
 
@@ -76,8 +76,9 @@ class CoordsIn(BaseModel):
 # ── Эндпоинты ────────────────────────────────────────────────────────────────
 
 def _require_cossu_role(user: User = Depends(get_current_user)) -> User:
-    if user.role not in COSSU_ROLES:
-        raise HTTPException(403, "Access denied: cossu roles only")
+    """Доступ к разделу ЦОССУ (любой уровень)."""
+    if "cossu" not in effective_sections(user):
+        raise HTTPException(403, "Access denied: no cossu section")
     return user
 
 
@@ -137,8 +138,8 @@ async def set_institution_coords(
     """Установить координаты ВСЕХ отделений учреждения с этим org_bin (admin_cossu).
     Все отделения находятся по одному адресу, поэтому координата одна на учреждение.
     """
-    if user.role != UserRole.admin_cossu:
-        raise HTTPException(403, "Only admin_cossu can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
     now = datetime.now(timezone.utc)
     result = await db.execute(
         sa_update(Cossu)
@@ -158,8 +159,8 @@ async def clear_institution_coords(
     user: User = Depends(_require_cossu_role),
 ):
     """Сбросить координаты у всех отделений учреждения (admin_cossu)."""
-    if user.role != UserRole.admin_cossu:
-        raise HTTPException(403, "Only admin_cossu can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
     now = datetime.now(timezone.utc)
     result = await db.execute(
         sa_update(Cossu)

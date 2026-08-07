@@ -27,7 +27,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.config import settings
-from app.db.models import User
+from app.db.models import User, effective_sections
 from app.db.session import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -50,9 +50,20 @@ class UserOut(BaseModel):
     id: int
     login: str
     role: str
+    sections: list[str] = []
     fio: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+def _user_out(user: User) -> "UserOut":
+    """UserOut с эффективными разделами (admin — все три)."""
+    return UserOut(
+        id=user.id, login=user.login,
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
+        sections=sorted(effective_sections(user)),
+        fio=user.fio,
+    )
 
 
 class LoginResponse(BaseModel):
@@ -98,7 +109,7 @@ async def login(
     user.last_login_at = datetime.now(timezone.utc)
     await db.commit()
     _set_tokens(response, user)
-    return LoginResponse(requires_2fa=False, user=UserOut.model_validate(user))
+    return LoginResponse(requires_2fa=False, user=_user_out(user))
 
 
 @router.post("/login-2fa", response_model=UserOut)
@@ -143,7 +154,7 @@ async def login_2fa(
     await db.refresh(user)
 
     _set_tokens(response, user)
-    return UserOut.model_validate(user)
+    return _user_out(user)
 
 
 @router.post("/refresh")
@@ -181,4 +192,4 @@ async def logout(response: Response):
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)) -> UserOut:
-    return UserOut.model_validate(current_user)
+    return _user_out(current_user)

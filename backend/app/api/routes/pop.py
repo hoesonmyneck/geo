@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-from app.core.deps import require_editor
+from app.core.deps import require_section_edit
 from app.db.models import User
 from app.db.session import get_db
 
@@ -73,7 +73,7 @@ async def update_coords(
     dwelling_id: int,
     body: CoordsUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_editor),
+    current_user: User = Depends(require_section_edit("population")),
 ):
     """Ручная правка координат жилища (pop_dwelling). Обновляем и geom —
     иначе точка не попадёт в новый bbox при перезагрузке окна карты.
@@ -108,6 +108,7 @@ CAT_KEYS = {
 async def clusters(
     w: float, s: float, e: float, n: float, zoom: float,
     cats: str | None = None,
+    conf: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Агрегированные «кружки» населения в bbox для мелкого зума: точки
@@ -117,7 +118,11 @@ async def clusters(
     cats — список категорий через запятую (lsi,ip,…). Если задан, цифра на
     кружке = сумма этих категорий, и в выборку попадают только дома, где есть
     хотя бы один человек КАЖДОЙ выбранной категории (та же AND-логика, что у
-    домов на крупном зуме)."""
+    домов на крупном зуме).
+
+    conf — список уровней уверенности (high,medium,low,miss). Если задан, кружки
+    считают только дома с этой точностью (чтобы фильтр «Уверенность» работал и
+    на мелком зуме, а не только на домах)."""
     cell = 70.0 / (2 ** zoom)
     sel = [c for c in (cats or "").split(",") if c in CAT_KEYS]
     if sel:
@@ -128,6 +133,16 @@ async def clusters(
     else:
         people_sql = "sum((stats->>'total')::int)"
         extra_where = " AND (stats->>'total')::int > 0"
+
+    # Фильтр уверенности (precision). Значения из фиксированного словаря —
+    # инъекции нет. conf передан, но пусто → ничего не показываем.
+    if conf is not None:
+        precisions = [CONF_REV[c] for c in conf.split(",") if c in CONF_REV]
+        if not precisions:
+            return _resp([])
+        plist = ",".join(f"'{p}'" for p in precisions)
+        extra_where += f" AND precision IN ({plist})"
+
     rows = (await db.execute(text(f"""
         SELECT avg(lat) AS clat, avg(lon) AS clon,
                {people_sql} AS people, count(*) AS n

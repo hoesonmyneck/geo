@@ -8,12 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_admin
 from app.core.security import hash_password
-from app.db.models import User, UserRole
+from app.db.models import SECTIONS, User, UserRole, effective_sections
 from app.db.session import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 IIN_RE = re.compile(r"^\d{12}$")
+
+
+def _clean_sections(sections: list[str] | None) -> list[str]:
+    """Оставляем только валидные разделы, сохраняя порядок SECTIONS."""
+    s = set(sections or [])
+    return [x for x in SECTIONS if x in s]
 
 
 def _normalize_iin(iin: str | None) -> str | None:
@@ -31,13 +37,15 @@ def _normalize_iin(iin: str | None) -> str | None:
 class UserCreate(BaseModel):
     login: str
     password: str
-    role: UserRole = UserRole.viewer
+    role: UserRole = UserRole.viewer      # уровень: admin/editor/viewer
+    sections: list[str] = []              # разделы: population/kandas/cossu
     iin: str | None = None        # если указан — будет требоваться 2FA через ЭЦП
     fio: str | None = None        # человеческое имя для отображения
 
 
 class UserUpdate(BaseModel):
     role: UserRole | None = None
+    sections: list[str] | None = None
     is_active: bool | None = None
     password: str | None = None
     iin: str | None = None       # пустая строка = убрать привязку к ЭЦП
@@ -48,6 +56,7 @@ class UserOut(BaseModel):
     id: int
     login: str
     role: str
+    sections: list[str] = []
     is_active: bool
     iin: str | None = None
     fio: str | None = None
@@ -55,10 +64,19 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _user_out(user: User) -> UserOut:
+    """UserOut с эффективными разделами (admin — все)."""
+    return UserOut(
+        id=user.id, login=user.login, role=user.role.value if hasattr(user.role, "value") else str(user.role),
+        sections=sorted(effective_sections(user)),
+        is_active=user.is_active, iin=user.iin, fio=user.fio,
+    )
+
+
 @router.get("", dependencies=[Depends(require_admin)])
 async def list_users(db: AsyncSession = Depends(get_db)) -> list[UserOut]:
     result = await db.execute(select(User).order_by(User.id))
-    return [UserOut.model_validate(u) for u in result.scalars()]
+    return [_user_out(u) for u in result.scalars()]
 
 
 @router.post("", dependencies=[Depends(require_admin)], status_code=201)
@@ -78,13 +96,14 @@ async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)) -> U
         login=body.login,
         password_hash=hash_password(body.password),
         role=body.role,
+        sections=_clean_sections(body.sections),
         iin=iin,
         fio=(body.fio or "").strip() or None,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return UserOut.model_validate(user)
+    return _user_out(user)
 
 
 @router.patch("/{user_id}", dependencies=[Depends(require_admin)])
@@ -96,6 +115,8 @@ async def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     if body.role is not None:
         user.role = body.role
+    if body.sections is not None:
+        user.sections = _clean_sections(body.sections)
     if body.is_active is not None:
         user.is_active = body.is_active
     if body.password is not None:
@@ -111,7 +132,7 @@ async def update_user(
         user.fio = body.fio.strip() or None
     await db.commit()
     await db.refresh(user)
-    return UserOut.model_validate(user)
+    return _user_out(user)
 
 
 @router.delete("/{user_id}", dependencies=[Depends(require_admin)], status_code=204)

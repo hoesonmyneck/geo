@@ -15,7 +15,7 @@ from sqlalchemy import (
     Integer, LargeBinary, SmallInteger, String, Text, UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -26,16 +26,30 @@ class Base(DeclarativeBase):
 # ─── Роли пользователей ──────────────────────────────────────────────────────
 
 class UserRole(str, enum.Enum):
-    viewer        = "viewer"
-    editor        = "editor"
-    admin         = "admin"
-    admin_kandas  = "admin_kandas"   # видит только кандасов, может редактировать
-    viewer_kandas = "viewer_kandas"  # видит только кандасов, только чтение
-    admin_cossu   = "admin_cossu"    # видит только ЦОССУ, может редактировать
-    viewer_cossu  = "viewer_cossu"   # видит только ЦОССУ, только чтение
+    # Уровень доступа (единственная ось роли). Разделы — в User.sections.
+    viewer        = "viewer"   # «пользователь»: только просмотр
+    editor        = "editor"   # редактор: может править в выданных разделах
+    admin         = "admin"    # админ: все разделы + управление пользователями
+    # ── Устаревшие секционные роли (мигрированы в role+sections миграцией 0014).
+    #    Оставлены в enum только чтобы старые токены/строки не падали при разборе.
+    admin_kandas  = "admin_kandas"
+    viewer_kandas = "viewer_kandas"
+    admin_cossu   = "admin_cossu"
+    viewer_cossu  = "viewer_cossu"
 
 KANDAS_ROLES = {UserRole.admin_kandas, UserRole.viewer_kandas}
 COSSU_ROLES  = {UserRole.admin_cossu,  UserRole.viewer_cossu}
+
+# ─── Разделы приложения (User.sections — список из этих значений) ─────────────
+SECTIONS = ("population", "kandas", "cossu")
+EDIT_ROLES = {UserRole.editor, UserRole.admin}
+
+
+def effective_sections(user: "User") -> set[str]:
+    """Разделы, доступные пользователю. admin видит все, остальные — свой список."""
+    if user.role == UserRole.admin:
+        return set(SECTIONS)
+    return set(user.sections or [])
 
 
 # ─── Тип географического объекта ─────────────────────────────────────────────
@@ -70,6 +84,8 @@ class User(Base):
     iin: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True, index=True)
     fio: Mapped[str | None] = mapped_column(String(256), nullable=True)
     role: Mapped[UserRole] = mapped_column(String(16), nullable=False, default=UserRole.viewer)
+    # Разделы, к которым есть доступ (population/kandas/cossu). admin — все неявно.
+    sections: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

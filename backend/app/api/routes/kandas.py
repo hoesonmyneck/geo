@@ -10,7 +10,7 @@ from sqlalchemy.orm import undefer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, get_current_user
-from app.db.models import Kandas, User, UserRole, KANDAS_ROLES
+from app.db.models import Kandas, User, EDIT_ROLES, effective_sections
 
 router = APIRouter(prefix="/kandas", tags=["kandas"])
 
@@ -54,8 +54,16 @@ class CoordsIn(BaseModel):
 # ── Эндпоинты ────────────────────────────────────────────────────────────────
 
 def _require_kandas_role(user: User = Depends(get_current_user)) -> User:
-    if user.role not in KANDAS_ROLES:
-        raise HTTPException(403, "Access denied: kandas roles only")
+    """Доступ к разделу кандасов (любой уровень)."""
+    if "kandas" not in effective_sections(user):
+        raise HTTPException(403, "Access denied: no kandas section")
+    return user
+
+
+def _require_kandas_edit(user: User = Depends(_require_kandas_role)) -> User:
+    """Правки кандасов: раздел kandas + уровень editor/admin."""
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
     return user
 
 
@@ -111,8 +119,8 @@ async def set_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Установить координаты кандаса вручную (admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
 
     k = await db.get(Kandas, kandas_id)
     if not k:
@@ -133,8 +141,8 @@ async def clear_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Сбросить координаты кандаса (admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
 
     k = await db.get(Kandas, kandas_id)
     if not k:
@@ -155,8 +163,8 @@ async def set_work_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Установить координаты места работы (admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
 
     k = await db.get(Kandas, kandas_id)
     if not k:
@@ -192,8 +200,8 @@ async def upload_photo(
     user: User = Depends(_require_kandas_role),
 ):
     """Загрузить фото кандаса (только admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can upload photos")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
     k = await db.get(Kandas, kandas_id)
     if not k:
         raise HTTPException(404, "Not found")
@@ -209,8 +217,8 @@ async def delete_photo(
     user: User = Depends(_require_kandas_role),
 ):
     """Удалить фото кандаса (только admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can delete photos")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
     k = await db.get(Kandas, kandas_id)
     if not k:
         raise HTTPException(404, "Not found")
@@ -226,8 +234,8 @@ async def clear_work_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Сбросить координаты места работы (admin_kandas)."""
-    if user.role != UserRole.admin_kandas:
-        raise HTTPException(403, "Only admin_kandas can edit")
+    if user.role not in EDIT_ROLES:
+        raise HTTPException(403, "Editor access required")
 
     k = await db.get(Kandas, kandas_id)
     if not k:
