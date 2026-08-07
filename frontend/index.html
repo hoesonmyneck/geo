@@ -322,9 +322,10 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 .geo-popup .addr-list div:last-child { border-bottom:none; }
 .geo-popup .hidden { display:none; }
 
-/* ── Линза выбора раздела (в правой колонке, под статистикой) ── */
+/* ── Линза выбора раздела (сверху слева, справа от кнопок зума +/−) ── */
 #section-lens {
-  display:none; flex-direction:column; gap:4px;
+  position:fixed; top:12px; left:316px; z-index:1000;
+  display:none; flex-direction:row; gap:4px;
   background:#fff; padding:5px; border-radius:10px;
   box-shadow:0 4px 16px rgba(15,23,42,.18); border:1px solid #e2e8f0;
 }
@@ -687,10 +688,11 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <span id="st-cossu-counts"></span>
   </div>
 </div><!-- /stats-panel -->
-  <!-- Линза выбора раздела (видна если доступно >1 раздела) -->
-  <div id="section-lens"></div>
-  <!-- Сюда переносится контрол выбора слоя карты (Leaflet), чтобы был под линзой -->
+  <!-- Сюда переносится контрол выбора слоя карты (Leaflet) -->
 </div><!-- /right-stack -->
+
+<!-- Линза выбора раздела (видна если >1 раздела) — справа от кнопок зума -->
+<div id="section-lens"></div>
 
 <!-- Панель статистики выделенной области -->
 <div id="sel-panel">
@@ -1350,7 +1352,7 @@ function startApp() {
 //  Карта
 // ═══════════════════════════════════════════════════════
 function initMap() {
-  map = L.map('map').setView(ASTANA, ZOOM);
+  map = L.map('map', {attributionControl:false}).setView(ASTANA, ZOOM);
 
   const baseLayers = {
     'Стандарт':   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM', maxZoom:19}),
