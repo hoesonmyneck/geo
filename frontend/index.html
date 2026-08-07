@@ -2133,32 +2133,32 @@ function renderPlaces() {
       }),
     });
 
-    // Привязываем popup сразу — Leaflet сам откроет его при клике.
-    // popupopen срабатывает каждый раз при открытии, данные грузим один раз и кэшируем.
-    m.bindPopup('<div class="geo-popup"><p>Загрузка...</p></div>', {maxWidth: 300});
-
-    let cachedPopupData = null;
-
-    // Данные (stats, адрес, регион) уже в точке из places.json — рисуем попап
-    // без обращения к API.
-    m.on('popupopen', () => {
-      if (!cachedPopupData) {
-        if (bucket.places.length === 1) {
-          cachedPopupData = p0;
-        } else {
-          // Несколько адресов на одной точке — суммируем их stats.
-          const merged = {...bucket.places[0]};
-          const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
-          merged.stats = {};
-          for (const k of keys) merged.stats[k] = bucket.places.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
-          merged.stats.regname = bucket.places[0].stats?.regname || null;
-          merged.stats.rainame = bucket.places[0].stats?.rainame || null;
-          merged._addresses = bucket.places.map(p => p.street_name);
-          cachedPopupData = merged;
-        }
+    // Попап открываем НА КАРТЕ (openOn(map)), а не привязываем к маркеру.
+    // Иначе при панораме маркеры пересоздаются (viewport-перезагрузка) и
+    // привязанный к маркеру попап пропадает. Карта-попап живёт независимо и
+    // остаётся открытым при перетаскивании.
+    m.on('click', () => {
+      let data;
+      if (bucket.places.length === 1) {
+        data = p0;
+      } else {
+        // Несколько адресов на одной точке — суммируем их stats.
+        const merged = {...bucket.places[0]};
+        const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
+        merged.stats = {};
+        for (const k of keys) merged.stats[k] = bucket.places.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
+        merged.stats.regname = bucket.places[0].stats?.regname || null;
+        merged.stats.rainame = bucket.places[0].stats?.rainame || null;
+        merged._addresses = bucket.places.map(p => p.street_name);
+        data = merged;
       }
-      m.setPopupContent(buildPopup(cachedPopupData));
-      m.getPopup()?.update();
+      const pop = L.popup({ maxWidth: 300, autoPan: true })
+        .setLatLng([p0.lat, p0.lon])
+        .setContent(buildPopup(data))
+        .openOn(map);
+      // Карточку можно двигать мышью (как у кандасов)
+      const el = pop.getElement();
+      if (el) _makePopupDraggable(el);
     });
 
     m._placeData = p0;
