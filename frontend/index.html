@@ -4780,7 +4780,14 @@ async function refreshUsersList() {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
           <div style="min-width:0;flex:1">
             <span style="font-weight:600">${u.login}</span>
-            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${roleLabel[u.role]||u.role}</span>
+            ${u.login === currentUser.login
+              ? `<span style="margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">${roleLabel[u.role]||u.role}</span>`
+              : `<select onchange="updateUserRole(${u.id}, this.value)" title="Уровень доступа"
+                   style="margin-left:8px;font-size:11px;font-weight:600;padding:2px 6px;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;color:${roleColor[u.role]||'#374151'};background:${roleBg[u.role]||'#f1f5f9'}">
+                   <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Пользователь</option>
+                   <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>Редактор</option>
+                   <option value="admin"  ${u.role === 'admin'  ? 'selected' : ''}>Админ</option>
+                 </select>`}
             ${!u.is_active ? '<span style="margin-left:6px;font-size:11px;color:#94a3b8">(неактивен)</span>' : ''}
             ${u.fio ? `<div style="font-size:11px;color:#475569;margin-top:2px">${u.fio}</div>` : ''}
             ${u.role === 'admin'
@@ -4818,6 +4825,20 @@ async function refreshUsersList() {
       </div>
     `).join('');
   } catch { el.textContent = 'Ошибка'; }
+}
+
+// Изменить уровень доступа пользователя (селект в списке). После смены
+// перерисовываем список: admin → «Разделы: все», иначе появляются чекбоксы.
+async function updateUserRole(id, role) {
+  try {
+    const r = await fetch(`${API}/api/users/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({role}),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.detail || 'Ошибка'); }
+  } catch { alert('Ошибка сети'); }
+  await refreshUsersList();
 }
 
 // Изменить доступные разделы пользователя (чекбоксы в списке)
