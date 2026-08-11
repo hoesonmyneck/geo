@@ -48,7 +48,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   display:flex; flex-direction:column;
 }
 #sidebar-header {
-  padding:13px 16px; background:#1e293b; color:#fff;
+  padding:13px 16px; background:#2563eb; color:#fff;
   font-size:14px; font-weight:600; letter-spacing:.2px; flex-shrink:0;
   display:flex; align-items:center; justify-content:space-between;
   position:sticky; top:0; z-index:5;
@@ -1408,6 +1408,9 @@ function initMap() {
     loadPopSummary();
     loadViewportPoints();
     map.on('moveend zoomend', _scheduleViewportLoad);
+    // Авто-определение области по центру карты → цельная стата по ней
+    map.on('moveend zoomend', _autoDetectPopRegion);
+    _autoDetectPopRegion();
   }
   // Подсветка границ включена по умолчанию
   toggleDistricts();
@@ -1427,15 +1430,15 @@ async function loadPopSummary() {
   } catch (e) { console.error('pop summary:', e); }
 }
 
-// Показывает тоталы по всей стране, когда точки не загружены (мелкий зум)
+// Показывает тоталы (весь КЗ или закреплённая область), когда точки не
+// загружены (мелкий зум). Логику шапки берём из _renderPopHeader.
 function _renderIdleStats() {
-  const zoom = map ? map.getZoom() : 0;
-  const hint = zoom < MIN_POINT_ZOOM ? ' — приблизьте для домов' : '';
-  document.getElementById('st-region').textContent = 'Казахстан' + hint;
-  document.getElementById('st-people-label').textContent = 'Людей:';
-  if (popSummary) {
-    document.getElementById('st-total').textContent = popSummary.total_dwellings.toLocaleString('ru');
-    document.getElementById('st-people').textContent = popSummary.total_people.toLocaleString('ru');
+  _renderPopHeader();
+  // Подсказка о зуме — только для режима «весь Казахстан»
+  if (!_popStatsRegion) {
+    const zoom = map ? map.getZoom() : 0;
+    const hint = zoom < MIN_POINT_ZOOM ? ' — приблизьте для домов' : '';
+    document.getElementById('st-region').textContent = 'Казахстан' + hint;
   }
 }
 
@@ -1633,8 +1636,9 @@ function updateViewStats(filteredList) {
   const bounds = map.getBounds();
   // По умолчанию подпись «Людей:»; фильтр категорий ниже может её переопределить
   document.getElementById('st-people-label').textContent = 'Людей:';
-  const hasFilters = activeCats.size > 0 || activeDistrict !== 'all' ||
-    !(activeConf.has('high') && activeConf.has('medium') && activeConf.has('low') && activeConf.has('miss'));
+  // Дефолт уверенности = {high, medium, low} (miss выключен) — это НЕ фильтр.
+  // Фильтром считаем только отклонение от дефолта, выбор категорий или района.
+  const hasFilters = _popFiltersActive();
 
   // ── Режим с активными фильтрами: показываем отфильтрованные данные по viewport ──
   if (hasFilters && filteredList) {
@@ -1668,54 +1672,117 @@ function updateViewStats(filteredList) {
     return;
   }
 
-  // ── Основной режим: определяем регион по viewport, показываем агрегат по всему региону ──
-  if (zoom < 7) {
-    document.getElementById('st-region').textContent = 'Казахстан — все данные';
-    document.getElementById('st-total').textContent = totalAggregate.houses.toLocaleString('ru');
-    document.getElementById('st-people').textContent = totalAggregate.people.toLocaleString('ru');
-    updateDistrictPanel(null);
-    return;
-  }
+  // ── Основной режим: по умолчанию весь Казахстан, либо закреплённая через
+  //    дропдаун область (не зависит от того, что попало в экран) ──
+  _renderPopHeader();
+}
 
-  // Определяем доминирующий регион по точкам в viewport
-  const inView = allPlaces.filter(p => p.lat != null && bounds.contains([p.lat, p.lon]));
-  if (!inView.length) return;
-
-  const regionCount = {};
-  for (const p of inView) {
-    const r = _regionFromCity(p.city) || 'Прочее';
-    regionCount[r] = (regionCount[r] || 0) + 1;
-  }
-  const sorted = Object.entries(regionCount).sort((a, b) => b[1] - a[1]);
-  const topShare = sorted[0][1] / inView.length;
-
-  let label, agg;
-  if (sorted.length === 1 || topShare > 0.7) {
-    // Один доминирующий регион — показываем его полный агрегат
-    label = sorted[0][0];
-    agg = regionAggregates[label] || { houses: 0, people: 0 };
-  } else if (sorted.length <= 3) {
-    // Несколько регионов — суммируем их агрегаты
-    label = sorted.map(e => e[0]).join(' / ');
-    agg = sorted.reduce((acc, [r]) => {
-      const a = regionAggregates[r] || { houses: 0, people: 0 };
-      return { houses: acc.houses + a.houses, people: acc.people + a.people };
-    }, { houses: 0, people: 0 });
+// Рисует шапку населения: закреплённая область (_popStatsRegion) либо весь КЗ.
+function _renderPopHeader() {
+  document.getElementById('st-people-label').textContent = 'Людей:';
+  if (_popStatsRegion) {
+    document.getElementById('st-region').textContent = _popStatsRegion.label;
+    document.getElementById('st-total').textContent = _popStatsRegion.houses.toLocaleString('ru');
+    document.getElementById('st-people').textContent = _popStatsRegion.people.toLocaleString('ru');
+    updateDistrictPanel(_popStatsRegion.label);
   } else {
-    label = 'Несколько регионов';
-    agg = totalAggregate;
+    const houses = popSummary ? popSummary.total_dwellings : totalAggregate.houses;
+    const people = popSummary ? popSummary.total_people   : totalAggregate.people;
+    document.getElementById('st-region').textContent = 'Казахстан — все данные';
+    document.getElementById('st-total').textContent = houses.toLocaleString('ru');
+    document.getElementById('st-people').textContent = people.toLocaleString('ru');
+    updateDistrictPanel(null);
   }
+}
 
-  document.getElementById('st-region').textContent = label;
-  document.getElementById('st-total').textContent = agg.houses.toLocaleString('ru');
-  document.getElementById('st-people').textContent = agg.people.toLocaleString('ru');
-  // Обновляем список районов в сайдбаре под текущий регион
-  updateDistrictPanel(label === 'Несколько регионов' ? null : label);
+// Обновить шапку населения из любого места (учитывает зум/загруженность точек)
+function refreshPopStats() {
+  if (allPlaces && allPlaces.length) updateViewStats(null);
+  else _renderIdleStats();
+}
+
+// ── Авто-определение области по центру карты (point-in-polygon по L4) ──────────
+// Луч-каст с чётно-нечётным правилом по всем кольцам (учитывает «дырки»-анклавы).
+function _pointInPolygon(x, y, rings) {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+  }
+  return inside;
+}
+function _pointInGeom(x, y, geom) {
+  if (!geom) return false;
+  if (geom.type === 'Polygon') return _pointInPolygon(x, y, geom.coordinates);
+  if (geom.type === 'MultiPolygon') return geom.coordinates.some(poly => _pointInPolygon(x, y, poly));
+  return false;
+}
+// Область под центром карты. При наложении (анклавы — Астана/Алматы/Шымкент)
+// берём с наименьшим bbox, чтобы город-регион побеждал окружающую область.
+function _oblastAtCenter() {
+  if (!map || !_cacheL4) return null;
+  const c = map.getCenter(), x = c.lng, y = c.lat;
+  let best = null, bestArea = Infinity;
+  for (const f of (_cacheL4.features || [])) {
+    if (_pointInGeom(x, y, f.geometry)) {
+      const b = f.properties && f.properties.bbox;
+      const a = b ? (b[2] - b[0]) * (b[3] - b[1]) : Infinity;
+      if (a < bestArea) { bestArea = a; best = f.properties; }
+    }
+  }
+  return best;
+}
+
+let _oblastStatsCache = {};
+async function _getOblastStats(idReg) {
+  if (_oblastStatsCache[idReg]) return _oblastStatsCache[idReg];
+  try {
+    const r = await fetch(`/api/pop/area?level=oblast&id=${idReg}`, { credentials: 'include' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const st = { label: d.name || '', houses: d.n || 0, people: (d.stats && d.stats.total) || 0 };
+    _oblastStatsCache[idReg] = st;
+    return st;
+  } catch { return null; }
+}
+
+// Активен ли реальный фильтр (категории/район/отклонение уверенности от дефолта)
+function _popFiltersActive() {
+  const confIsDefault = activeConf.size === 3 &&
+    activeConf.has('high') && activeConf.has('medium') && activeConf.has('low');
+  return activeCats.size > 0 || activeDistrict !== 'all' || !confIsDefault;
+}
+
+let _popDetectToken = 0;
+async function _autoDetectPopRegion() {
+  if (!map || isKandasRole() || isCossuRole()) return;
+  const token = ++_popDetectToken;
+  let region = null;
+  if (map.getZoom() >= 7) {              // не отдалено на весь КЗ
+    await _getL4();                      // границы областей (кэшируются)
+    if (token !== _popDetectToken) return;
+    const props = _oblastAtCenter();
+    if (props && props.id_reg != null) {
+      const st = await _getOblastStats(props.id_reg);
+      if (token !== _popDetectToken) return;
+      region = st || { label: props.name || '', houses: 0, people: 0 };
+    }
+  }
+  _popStatsRegion = region;
+  // При активном фильтре шапку не перебиваем — там показ отфильтрованных данных;
+  // область покажется, как только фильтр снимут.
+  if (!_popFiltersActive()) refreshPopStats();
 }
 
 // ═══════════════════════════════════════════════════════
 //  Перелёт к области
 // ═══════════════════════════════════════════════════════
+// Область под центром карты для шапки населения (null = весь Казахстан).
+// Определяется авто (_autoDetectPopRegion) по point-in-polygon границ областей.
+let _popStatsRegion = null;
+
 const REGION_COORDS = {
   'Астана':              [51.18,  71.44,  12],
   'Алматы':             [43.24,  76.89,  12],
@@ -1742,6 +1809,12 @@ function gotoRegion(sel) {
   const coords = REGION_COORDS[val];
   if (coords && map) {
     map.flyTo([coords[0], coords[1]], coords[2], {animate: true, duration: 1.2});
+  }
+  // В режиме ЦОССУ переключаем правую стату на районы выбранной области.
+  // В режиме населения шапку не трогаем — область определится авто (по центру
+  // карты) после перелёта: _autoDetectPopRegion на moveend.
+  if (isCossuRole()) {
+    _cossuStatsRegion = val; _cossuBrkOpen = true; updateCossuStats();
   }
   // Сбрасываем дропдаун обратно в placeholder
   setTimeout(() => { sel.value = ''; }, 1000);
@@ -3397,6 +3470,8 @@ function _renderCossuLayer() {
   if (cossuLinesLayer) { map.removeLayer(cossuLinesLayer); cossuLinesLayer = null; _cossuLineMembers.clear(); }
   if (cossuRadiusLayer) { map.removeLayer(cossuRadiusLayer); cossuRadiusLayer = null; }
   _renderCossuMarkers();
+  // Правая стата — по тем же учреждениям, что видны на карте (с учётом фильтров)
+  if (isCossuRole()) updateCossuStats();
 }
 
 // Рисует линии от учреждения с очередью к 3 ближайшим без очереди.
@@ -3556,33 +3631,73 @@ async function loadCossuData() {
 
 function updateCossuStats() {
   if (!cossuData) return;
-  const unknownCount = cossuData.filter(c => c.lat == null || c.lon == null).length;
-
+  // Считаем только учреждения, прошедшие активные фильтры (типы/собственность/очередь)
+  const shown = cossuData.filter(_cossuPassesFilters);
   const allRegions = Array.from(
     document.querySelectorAll('#goto-region option[value]:not([value=""])')
   ).map(o => o.value);
-  const counts = {};
-  for (const r of allRegions) counts[r] = 0;
-  for (const c of cossuData) {
-    const matched = _matchRegionToDropdown(c.region, allRegions);
-    if (!matched) continue;
-    counts[matched] = (counts[matched] || 0) + 1;
+
+  let items, totalLabel, resetLink = '';
+  let relevant;
+  if (_cossuStatsRegion) {
+    // Детализация: районы выбранной области
+    relevant = shown.filter(c => _matchRegionToDropdown(c.region, allRegions) === _cossuStatsRegion);
+    totalLabel = `Всего в «${_cossuStatsRegion}»`;
+    const byRayon = {};
+    for (const c of relevant) {
+      const r = (c.rayon && c.rayon.trim()) || '(без района)';
+      byRayon[r] = (byRayon[r] || 0) + 1;
+    }
+    items = Object.entries(byRayon).sort((a, b) => b[1] - a[1]);
+    resetLink = `<div style="margin-top:6px"><span onclick="cossuStatsAllRegions()" style="cursor:pointer;color:#2563eb;font-size:11px">&#8592; Все области</span></div>`;
+  } else {
+    // Все области
+    relevant = shown;
+    totalLabel = 'Всего учреждений';
+    const counts = {};
+    for (const r of allRegions) counts[r] = 0;
+    for (const c of shown) {
+      const matched = _matchRegionToDropdown(c.region, allRegions);
+      if (!matched) continue;
+      counts[matched] = (counts[matched] || 0) + 1;
+    }
+    items = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }
-  const lines = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
+
+  const lines = items
     .map(([r, n]) => {
       const color = n > 0 ? '#374151' : '#94a3b8';
       return `<span style="white-space:nowrap;color:${color}"><b>${r}:</b> ${n}</span>`;
     })
     .join('<br>');
 
-  const totalLine = `<span style="white-space:nowrap;color:#374151"><b>Всего учреждений:</b> ${cossuData.length}</span><br>`;
+  const unknownCount = relevant.filter(c => c.lat == null || c.lon == null).length;
   const unknownLine = unknownCount > 0
     ? `<span style="white-space:nowrap;color:#ef4444"><b>Без координат:</b> ${unknownCount}</span><br>`
     : '';
 
+  // По умолчанию виден только заголовок; клик раскрывает разбивку.
+  const arrow = _cossuBrkOpen ? '&#9650;' : '&#9660;';
+  const header = `<span onclick="toggleCossuBreakdown()" style="cursor:pointer;white-space:nowrap;color:#374151;user-select:none">`
+    + `<b>${totalLabel}:</b> ${relevant.length} <span id="cossu-brk-arr" style="color:#64748b">${arrow}</span></span>`;
+  const breakdown = `<div id="cossu-breakdown" style="display:${_cossuBrkOpen ? 'block' : 'none'};margin-top:4px">${resetLink}${unknownLine}${lines}</div>`;
+
   const el = document.getElementById('st-cossu-counts');
-  if (el) el.innerHTML = (totalLine + unknownLine + lines) || '<span style="color:#94a3b8">Нет данных</span>';
+  if (el) el.innerHTML = header + breakdown;
+}
+
+let _cossuBrkOpen = false;        // раскрыта ли разбивка
+let _cossuStatsRegion = null;     // выбранная область (детализация по районам) или null
+function toggleCossuBreakdown() {
+  _cossuBrkOpen = !_cossuBrkOpen;
+  const brk = document.getElementById('cossu-breakdown');
+  const arr = document.getElementById('cossu-brk-arr');
+  if (brk) brk.style.display = _cossuBrkOpen ? 'block' : 'none';
+  if (arr) arr.innerHTML = _cossuBrkOpen ? '&#9650;' : '&#9660;';
+}
+function cossuStatsAllRegions() {
+  _cossuStatsRegion = null;
+  updateCossuStats();
 }
 
 async function openCossuModal() {
