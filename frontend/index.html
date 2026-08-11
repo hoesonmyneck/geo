@@ -1597,6 +1597,18 @@ function buildRegionAggregates() {
 }
 
 // Перестраивает панель "Районы" под текущий регион
+// Нормализованный ключ района для дедупа: убираем «район»/«ауданы», приводим
+// казахские буквы к русской основе, чтобы «район Есиль» == «Есіл ауданы».
+function _raionKey(name) {
+  let s = (name || '').trim()
+    .replace(/^район\s+/i, '').replace(/\s+ауданы\s*$/i, '').replace(/\s+район\s*$/i, '')
+    .toUpperCase();
+  const kz = {'Ә':'А','Ө':'О','Ү':'У','Ұ':'У','Қ':'К','Ң':'Н','І':'И','Ғ':'Г','Һ':'Х','Ё':'Е'};
+  s = s.replace(/[ӘӨҮҰҚҢІҒҺЁ]/g, c => kz[c]);
+  s = s.replace(/[ЬЪ]/g, '');                    // мягкий/твёрдый знак (Есиль↔Есіл)
+  return s.replace(/\s+/g, '');
+}
+
 let _raionGeoms = {};            // id_rai → { geom, bbox } для пространственного фильтра
 let _activeDistrictGeom = null;  // геометрия выбранного района
 let _activeDistrictBbox = null;  // его bbox (быстрый отсев перед PIP)
@@ -1621,9 +1633,19 @@ async function updateDistrictPanel(idReg) {
 
   const l68 = await _getL68();                    // границы районов (кэш)
   if (currentDetectedRegion !== idReg) return;    // область сменилась, пока грузили
-  const feats = (l68.features || [])
-    .filter(f => f.properties && f.properties.id_reg === idReg)
-    .sort((a, b) => (a.properties.name || '').localeCompare(b.properties.name || '', 'ru'));
+  let feats = (l68.features || []).filter(f => f.properties && f.properties.id_reg === idReg);
+
+  // Дедуп: один и тот же район под разными названиями (каз/рус, старое/новое —
+  // напр. «район Алматы» и «Алматы ауданы»). Ключ — нормализованное имя;
+  // предпочитаем казахское «… ауданы».
+  const byKey = new Map();
+  for (const f of feats) {
+    const key = _raionKey(f.properties.name);
+    const isKaz = /ауданы\s*$/i.test(f.properties.name || '');
+    const cur = byKey.get(key);
+    if (!cur || (isKaz && !/ауданы\s*$/i.test(cur.properties.name || ''))) byKey.set(key, f);
+  }
+  feats = [...byKey.values()].sort((a, b) => (a.properties.name || '').localeCompare(b.properties.name || '', 'ru'));
 
   _raionGeoms = {};
   let html = allRow;
