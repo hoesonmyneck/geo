@@ -41,7 +41,8 @@ KANDAS_ROLES = {UserRole.admin_kandas, UserRole.viewer_kandas}
 COSSU_ROLES  = {UserRole.admin_cossu,  UserRole.viewer_cossu}
 
 # ─── Разделы приложения (User.sections — список из этих значений) ─────────────
-SECTIONS = ("population", "kandas", "cossu")
+# residents — постоянные резиденты (kandas.kind='pmz'), отдельно от kandas.
+SECTIONS = ("population", "kandas", "residents", "cossu")
 EDIT_ROLES = {UserRole.editor, UserRole.admin}
 
 

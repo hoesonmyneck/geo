@@ -676,15 +676,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <b>Домов:</b> <span id="st-total">0</span> &nbsp;|&nbsp; <b id="st-people-label">Людей:</b> <span id="st-people">0</span><br>
     <span id="st-user" style="font-size:12px;color:#64748b"></span>
   </div>
-  <!-- Режим кандасов: кандасы по городам -->
+  <!-- Режим кандасов/резидентов: реестр по городам (вид зависит от линзы) -->
   <div id="st-kandas-info" style="display:none;font-size:12px;line-height:1.8">
-    <!-- Переключатель Кандасы / Постоянные резиденты (взаимоисключающие) -->
-    <div style="display:flex;margin-bottom:8px;border:1px solid #c4b5fd;border-radius:6px;overflow:hidden">
-      <button id="kv-btn-kandas" onclick="switchKandasView('kandas')"
-        style="flex:1;padding:6px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Кандасы</button>
-      <button id="kv-btn-pmz" onclick="switchKandasView('pmz')"
-        style="flex:1;padding:6px;border:none;background:#fff;color:#0891b2;font-size:11px;font-weight:700;cursor:pointer">Постоянные резиденты</button>
-    </div>
     <span id="st-kandas-counts"></span>
   </div>
   <!-- Режим ЦОССУ: учреждения по областям -->
@@ -838,6 +831,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
         <div style="display:flex;gap:14px;flex-wrap:wrap">
           <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="population"> Население</label>
           <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="kandas"> Кандасы</label>
+          <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="residents"> Резиденты</label>
           <label class="cat-item" style="margin:0"><input type="checkbox" class="nu-sec" value="cossu"> ЦОССУ</label>
         </div>
         <div id="nu-sections-admin-hint" style="display:none;font-size:11px;color:#94a3b8;margin-top:4px">Админ видит все разделы автоматически.</div>
@@ -1227,8 +1221,8 @@ async function doLogout() {
 // Активный раздел на эту загрузку страницы = currentSection. Переключение —
 // линзой справа (сохраняет выбор и перезагружает страницу).
 let currentSection = null;
-const SECTION_LABELS = { population: 'Население', kandas: 'Кандасы', cossu: 'ЦОССУ' };
-const SECTION_ORDER  = ['population', 'kandas', 'cossu'];
+const SECTION_LABELS = { population: 'Население', kandas: 'Кандасы', residents: 'Резиденты', cossu: 'ЦОССУ' };
+const SECTION_ORDER  = ['population', 'kandas', 'residents', 'cossu'];
 
 function userSections() {
   if (!currentUser) return [];
@@ -1252,8 +1246,9 @@ function switchSection(sec) {
   location.reload();
 }
 
-// Раздел определяет режим (раньше это делала роль)
-function isKandasRole() { return currentSection === 'kandas'; }
+// Раздел определяет режим (раньше это делала роль). kandas и residents — один
+// UI-режим (реестр по kandas.kind), различается видом: kandas / pmz.
+function isKandasRole() { return currentSection === 'kandas' || currentSection === 'residents'; }
 function isCossuRole()  { return currentSection === 'cossu'; }
 // Может ли пользователь редактировать в текущем разделе (уровень editor/admin)
 function canEditCurrent() {
@@ -1297,6 +1292,9 @@ function startApp() {
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-kandas-info').style.display = 'block';
     document.getElementById('st-normal-info').style.display = 'none';
+    // Подпись кнопки списка зависит от линзы (кандасы / резиденты)
+    const btnList = document.getElementById('btn-kandas-list');
+    if (btnList) btnList.textContent = _isPmzView() ? 'Список резидентов' : 'Список кандасов';
     // В дропдауне "Перейти к области" гасим неактивные опции (по текущему виду)
     _applyKandasRegionDropdown();
   } else if (isCossuRole()) {
@@ -2497,10 +2495,10 @@ function toggleHideMarkers() {
 // ═══════════════════════════════════════════════════════
 let kandasLayer   = null;   // слой с маркерами кандасов (дом)
 let kandasData    = [];     // кэш списка
-// Что показываем в разделе: 'kandas' (по умолчанию) или 'pmz' (постоянные
-// резиденты). Переключается тумблером, оба типа одновременно не показываются.
-let kandasView    = 'kandas';
-function _isPmzView() { return kandasView === 'pmz'; }
+// Вид реестра определяется активным разделом-линзой: residents → 'pmz'
+// (постоянные резиденты), иначе 'kandas'. Тумблера больше нет.
+function _isPmzView() { return currentSection === 'residents'; }
+Object.defineProperty(window, 'kandasView', { get: () => (currentSection === 'residents' ? 'pmz' : 'kandas') });
 
 // Для кандас-аккаунтов чекбокс удалён из DOM — линза всегда включена
 function _isKandasLensOn() {
@@ -2624,24 +2622,7 @@ function _applyKandasRegionDropdown() {
   });
 }
 
-// Переключение Кандасы ⇄ Постоянные резиденты (взаимоисключающие).
-function switchKandasView(view) {
-  if (view === kandasView) return;
-  kandasView = view;
-  const bK = document.getElementById('kv-btn-kandas');
-  const bP = document.getElementById('kv-btn-pmz');
-  const css = (active, color) =>
-    `flex:1;padding:6px;border:none;font-size:11px;font-weight:700;cursor:pointer;` +
-    (active ? `background:${color};color:#fff` : `background:#fff;color:${color}`);
-  if (bK) bK.style.cssText = css(view === 'kandas', '#7c3aed');
-  if (bP) bP.style.cssText = css(view === 'pmz', '#0891b2');
-  const btnList = document.getElementById('btn-kandas-list');
-  if (btnList) btnList.textContent = view === 'pmz' ? 'Список резидентов' : 'Список кандасов';
-  _applyKandasRegionDropdown();
-  loadKandasLayer();
-  // Активность регионов меняется — перерисовываем границы
-  if (districtsVisible) fetchDistricts();
-}
+// Тумблер удалён: вид (кандасы/резиденты) задаётся активной линзой-разделом.
 
 // Аббревиатуры из дропдауна → подстрока для поиска в полном названии региона
 const REGION_ABBR_MAP = {
@@ -4976,7 +4957,7 @@ async function refreshUsersList() {
     const roleColor = {admin:'#dc2626', editor:'#d97706', viewer:'#2563eb'};
     const roleBg    = {admin:'#fef2f2', editor:'#fffbeb', viewer:'#eff6ff'};
     const roleLabel = {admin:'Админ', editor:'Редактор', viewer:'Пользователь'};
-    const secLabel  = {population:'Население', kandas:'Кандасы', cossu:'ЦОССУ'};
+    const secLabel  = {population:'Население', kandas:'Кандасы', residents:'Резиденты', cossu:'ЦОССУ'};
     el.innerHTML = users.map(u => `
       <div style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;background:#fff">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
@@ -4996,7 +4977,7 @@ async function refreshUsersList() {
               ? '<div style="margin-top:5px;font-size:11px;color:#94a3b8">Разделы: все (админ)</div>'
               : `<div style="margin-top:5px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
                    <span style="font-size:11px;color:#64748b">Разделы:</span>
-                   ${['population','kandas','cossu'].map(s => `
+                   ${['population','kandas','residents','cossu'].map(s => `
                      <label style="font-size:11px;color:#334155;display:inline-flex;align-items:center;gap:3px;cursor:pointer">
                        <input type="checkbox" data-uid="${u.id}" value="${s}" ${(u.sections||[]).includes(s) ? 'checked' : ''} onchange="updateUserSections(${u.id})"> ${secLabel[s]}
                      </label>`).join('')}

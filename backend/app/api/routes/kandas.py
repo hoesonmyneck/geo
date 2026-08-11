@@ -53,18 +53,28 @@ class CoordsIn(BaseModel):
 
 # ── Эндпоинты ────────────────────────────────────────────────────────────────
 
+def _kind_section(kind: str) -> str:
+    """kandas.kind → раздел доступа: pmz → residents, иначе → kandas."""
+    return "residents" if kind == "pmz" else "kandas"
+
+
 def _require_kandas_role(user: User = Depends(get_current_user)) -> User:
-    """Доступ к разделу кандасов (любой уровень)."""
-    if "kandas" not in effective_sections(user):
-        raise HTTPException(403, "Access denied: no kandas section")
+    """Доступ к модулю кандасов/резидентов (хотя бы один из разделов)."""
+    if not ({"kandas", "residents"} & effective_sections(user)):
+        raise HTTPException(403, "Access denied: no kandas/residents section")
     return user
 
 
-def _require_kandas_edit(user: User = Depends(_require_kandas_role)) -> User:
-    """Правки кандасов: раздел kandas + уровень editor/admin."""
-    if user.role not in EDIT_ROLES:
+async def _load_kandas(kandas_id: int, db: AsyncSession, user: User, *, edit: bool = False) -> Kandas:
+    """Загрузить запись и проверить доступ к её разделу (по kind) + при edit — уровень."""
+    k = await db.get(Kandas, kandas_id)
+    if not k:
+        raise HTTPException(404, "Not found")
+    if _kind_section(k.kind) not in effective_sections(user):
+        raise HTTPException(403, "No access to this record's section")
+    if edit and user.role not in EDIT_ROLES:
         raise HTTPException(403, "Editor access required")
-    return user
+    return k
 
 
 @router.get("", response_model=list[KandasOut])
@@ -73,10 +83,13 @@ async def list_kandas(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_kandas_role),
 ):
-    """Список записей реестра нужного типа (только для ролей kandas).
+    """Список записей реестра нужного типа.
 
-    kind='kandas' — кандасы (по умолчанию), kind='pmz' — постоянные резиденты.
+    kind='kandas' — кандасы (раздел kandas), kind='pmz' — постоянные резиденты
+    (раздел residents). Проверяем доступ к соответствующему разделу.
     """
+    if _kind_section(kind) not in effective_sections(user):
+        raise HTTPException(403, f"No access to section '{_kind_section(kind)}'")
     result = await db.execute(
         select(Kandas).where(Kandas.kind == kind).order_by(Kandas.id)
     )
@@ -99,9 +112,7 @@ async def get_kandas(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_kandas_role),
 ):
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    k = await _load_kandas(kandas_id, db, user)
 
     photo_result = await db.execute(
         select(Kandas.id).where(Kandas.id == kandas_id, Kandas.photo != None)
@@ -119,12 +130,7 @@ async def set_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Установить координаты кандаса вручную (admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    k = await _load_kandas(kandas_id, db, user, edit=True)
 
     k.lat          = body.lat
     k.lon          = body.lon
@@ -141,12 +147,7 @@ async def clear_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Сбросить координаты кандаса (admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    k = await _load_kandas(kandas_id, db, user, edit=True)
 
     k.lat = k.lon = None
     k.coord_source = "none"
@@ -163,12 +164,7 @@ async def set_work_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Установить координаты места работы (admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    k = await _load_kandas(kandas_id, db, user, edit=True)
 
     k.work_lat = body.lat
     k.work_lon = body.lon
@@ -189,6 +185,8 @@ async def get_photo(
     k = result.scalar_one_or_none()
     if not k or not k.photo:
         raise HTTPException(404, "No photo")
+    if _kind_section(k.kind) not in effective_sections(user):
+        raise HTTPException(403, "No access to this record's section")
     return Response(content=k.photo, media_type="image/jpeg")
 
 
@@ -199,12 +197,8 @@ async def upload_photo(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_kandas_role),
 ):
-    """Загрузить фото кандаса (только admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    """Загрузить фото кандаса/резидента (editor+)."""
+    k = await _load_kandas(kandas_id, db, user, edit=True)
     k.photo = await file.read()
     await db.commit()
     return {"ok": True}
@@ -216,12 +210,8 @@ async def delete_photo(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_kandas_role),
 ):
-    """Удалить фото кандаса (только admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    """Удалить фото кандаса/резидента (editor+)."""
+    k = await _load_kandas(kandas_id, db, user, edit=True)
     k.photo = None
     await db.commit()
     return {"ok": True}
@@ -234,12 +224,7 @@ async def clear_work_coords(
     user: User = Depends(_require_kandas_role),
 ):
     """Сбросить координаты места работы (admin_kandas)."""
-    if user.role not in EDIT_ROLES:
-        raise HTTPException(403, "Editor access required")
-
-    k = await db.get(Kandas, kandas_id)
-    if not k:
-        raise HTTPException(404, "Not found")
+    k = await _load_kandas(kandas_id, db, user, edit=True)
 
     k.work_lat = k.work_lon = None
     await db.commit()
