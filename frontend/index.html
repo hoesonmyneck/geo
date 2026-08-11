@@ -1640,8 +1640,12 @@ function updateViewStats(filteredList) {
   // Фильтром считаем только отклонение от дефолта, выбор категорий или района.
   const hasFilters = _popFiltersActive();
 
-  // ── Режим с активными фильтрами: показываем отфильтрованные данные по viewport ──
-  if (hasFilters && filteredList) {
+  // Чистый фильтр категорий (без выбора района) показываем по всей области/КЗ —
+  // это делает _renderPopHeader ниже. Здесь — только район/уверенность по окну.
+  const pureCategory = activeCats.size > 0 && activeDistrict === 'all';
+
+  // ── Фильтр района / уверенности: отфильтрованные данные по viewport ──
+  if (hasFilters && filteredList && !pureCategory) {
     const pool = zoom < 7
       ? filteredList
       : filteredList.filter(p => p.lat != null && bounds.contains([p.lat, p.lon]));
@@ -1679,20 +1683,26 @@ function updateViewStats(filteredList) {
 
 // Рисует шапку населения: закреплённая область (_popStatsRegion) либо весь КЗ.
 function _renderPopHeader() {
-  document.getElementById('st-people-label').textContent = 'Людей:';
-  if (_popStatsRegion) {
-    document.getElementById('st-region').textContent = _popStatsRegion.label;
-    document.getElementById('st-total').textContent = _popStatsRegion.houses.toLocaleString('ru');
-    document.getElementById('st-people').textContent = _popStatsRegion.people.toLocaleString('ru');
-    updateDistrictPanel(_popStatsRegion.label);
-  } else {
-    const houses = popSummary ? popSummary.total_dwellings : totalAggregate.houses;
-    const people = popSummary ? popSummary.total_people   : totalAggregate.people;
-    document.getElementById('st-region').textContent = 'Казахстан — все данные';
-    document.getElementById('st-total').textContent = houses.toLocaleString('ru');
+  const region = _popStatsRegion;   // {label, houses, people, stats} | null
+  const label  = region ? region.label : 'Казахстан — все данные';
+  const houses = region ? region.houses : (popSummary ? popSummary.total_dwellings : totalAggregate.houses);
+  const regStats = region ? region.stats : (popSummary && popSummary.stats);
+  const cats = [...activeCats];
+
+  document.getElementById('st-region').textContent = label;
+  document.getElementById('st-total').textContent = houses.toLocaleString('ru');
+
+  if (cats.length && activeDistrict === 'all' && regStats) {
+    // Фильтр категорий — считаем людей этих категорий по всей области/КЗ
+    const people = cats.reduce((a, c) => a + (regStats[c] || 0), 0);
+    document.getElementById('st-people-label').textContent = cats.map(c => CAT_LABELS[c] || c).join(' + ') + ':';
     document.getElementById('st-people').textContent = people.toLocaleString('ru');
-    updateDistrictPanel(null);
+  } else {
+    const people = region ? region.people : (popSummary ? popSummary.total_people : totalAggregate.people);
+    document.getElementById('st-people-label').textContent = 'Людей:';
+    document.getElementById('st-people').textContent = people.toLocaleString('ru');
   }
+  updateDistrictPanel(region ? region.label : null);
 }
 
 // Обновить шапку населения из любого места (учитывает зум/загруженность точек)
@@ -1742,7 +1752,7 @@ async function _getOblastStats(idReg) {
     const r = await fetch(`/api/pop/area?level=oblast&id=${idReg}`, { credentials: 'include' });
     if (!r.ok) return null;
     const d = await r.json();
-    const st = { label: d.name || '', houses: d.n || 0, people: (d.stats && d.stats.total) || 0 };
+    const st = { label: d.name || '', houses: d.n || 0, people: (d.stats && d.stats.total) || 0, stats: d.stats || {} };
     _oblastStatsCache[idReg] = st;
     return st;
   } catch { return null; }
@@ -1771,9 +1781,10 @@ async function _autoDetectPopRegion() {
     }
   }
   _popStatsRegion = region;
-  // При активном фильтре шапку не перебиваем — там показ отфильтрованных данных;
-  // область покажется, как только фильтр снимут.
-  if (!_popFiltersActive()) refreshPopStats();
+  // Перерисовываем шапку, если: фильтров нет, ИЛИ активен фильтр категорий без
+  // выбора района (тогда показываем категорию по всей области). При фильтре
+  // района/уверенности шапку не трогаем — там показ по viewport.
+  if ((activeCats.size > 0 && activeDistrict === 'all') || !_popFiltersActive()) refreshPopStats();
 }
 
 // ═══════════════════════════════════════════════════════

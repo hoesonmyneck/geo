@@ -250,9 +250,16 @@ async def summary(db: AsyncSession = Depends(get_db)):
              GROUP BY 1 ORDER BY 2 DESC NULLS LAST
         """))).all()
         regions = [{"regname": r[0], "people": int(r[1] or 0), "dwellings": r[2]} for r in rows]
+        # Итог по всему КЗ в разрезе категорий (для фильтров при виде «весь Казахстан»)
+        cat_sums = ", ".join(f"sum((stats->>'{c}')::int) AS {c}" for c in sorted(CAT_KEYS))
+        crow = (await db.execute(text(
+            f"SELECT {cat_sums} FROM pop_dwelling WHERE stats IS NOT NULL"
+        ))).mappings().first()
+        kz_stats = {c: int((crow or {}).get(c) or 0) for c in CAT_KEYS}
         _summary_cache = {
             "total_people": sum(x["people"] for x in regions),
             "total_dwellings": sum(x["dwellings"] for x in regions),
             "regions": regions,
+            "stats": kz_stats,
         }
     return _resp(_summary_cache)
