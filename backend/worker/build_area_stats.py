@@ -7,10 +7,18 @@
 Запуск (ХОСТ): python backend/worker/build_area_stats.py <l4.geojson> <l68.geojson>
 """
 from __future__ import annotations
-import json, sys
+import json, os, sys
 import psycopg
 
-DSN = "host=localhost port=5432 dbname=geo user=geo password=geopassword123"
+# DSN из окружения (чтобы гонять и с хоста, и внутри backend-контейнера, где
+# postgres доступен по хосту 'postgres'). Фолбэк — локальный проброс.
+DSN = (
+    f"host={os.getenv('POSTGRES_HOST', 'localhost')} "
+    f"port={os.getenv('POSTGRES_PORT', '5432')} "
+    f"dbname={os.getenv('POSTGRES_DB', 'geo')} "
+    f"user={os.getenv('POSTGRES_USER', 'geo')} "
+    f"password={os.getenv('POSTGRES_PASSWORD', 'geopassword123')}"
+)
 FLAGS = ["total", "male", "female", "lsi", "asp", "deti_do18", "trud_vozrast",
          "working", "student", "pensioners", "ip", "kandas",
          "mnogodetnyi", "woman_uhod_do3", "rt_unemployed",
