@@ -111,6 +111,7 @@ async def clusters(
     w: float, s: float, e: float, n: float, zoom: float,
     cats: str | None = None,
     conf: str | None = None,
+    id_rai: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Агрегированные «кружки» населения в bbox для мелкого зума: точки
@@ -124,8 +125,12 @@ async def clusters(
 
     conf — список уровней уверенности (high,medium,low,miss). Если задан, кружки
     считают только дома с этой точностью (чтобы фильтр «Уверенность» работал и
-    на мелком зуме, а не только на домах)."""
+    на мелком зуме, а не только на домах).
+
+    id_rai — если задан, кружки считают только дома внутри полигона этого района
+    (map_district), чтобы фильтр района работал и на мелком зуме."""
     cell = 70.0 / (2 ** zoom)
+    params: dict = {"w": w, "s": s, "e": e, "n": n, "cell": cell}
     sel = [c for c in (cats or "").split(",") if c in CAT_KEYS]
     if sel:
         sum_expr = " + ".join(f"(stats->>'{c}')::int" for c in sel)
@@ -145,6 +150,13 @@ async def clusters(
         plist = ",".join(f"'{p}'" for p in precisions)
         extra_where += f" AND precision IN ({plist})"
 
+    # Фильтр района: только дома внутри полигона района (map_district по id_rai).
+    # Подзапрос не коррелирован → выполняется один раз (InitPlan).
+    if id_rai is not None:
+        extra_where += (" AND geom && (SELECT geom FROM map_district WHERE id_rai = :id_rai LIMIT 1)"
+                        " AND ST_Contains((SELECT geom FROM map_district WHERE id_rai = :id_rai LIMIT 1), geom)")
+        params["id_rai"] = id_rai
+
     rows = (await db.execute(text(f"""
         SELECT avg(lat) AS clat, avg(lon) AS clon,
                {people_sql} AS people, count(*) AS n
@@ -155,7 +167,7 @@ async def clusters(
         HAVING {people_sql} > 0
          ORDER BY people DESC
          LIMIT 3000
-    """), {"w": w, "s": s, "e": e, "n": n, "cell": cell})).all()
+    """), params)).all()
     return _resp([{"lat": r[0], "lon": r[1], "people": int(r[2] or 0), "n": r[3]} for r in rows])
 
 

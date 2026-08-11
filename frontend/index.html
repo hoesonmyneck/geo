@@ -482,14 +482,11 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   </div>
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
-    <button class="action-btn" id="btn-kandas-list" onclick="openKandasModal()" style="background:#7c3aed;color:#fff;border-color:#7c3aed">Список кандасов</button>
-    <button class="action-btn" onclick="openCossuModal()" style="background:#0891b2;color:#fff;border-color:#0891b2">Список ЦОССУ</button>
-    <button class="action-btn" onclick="openCossuStats()" style="background:#0e7490;color:#fff;border-color:#0e7490">Статистика ЦОССУ</button>
+    <button class="action-btn" id="btn-kandas-list" onclick="openKandasModal()">Список кандасов</button>
+    <button class="action-btn" onclick="openCossuModal()">Список ЦОССУ</button>
+    <button class="action-btn" onclick="openCossuStats()">Статистика ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
-    <label class="cat-item" style="margin-top:6px">
-      <input type="checkbox" id="chk-hide-markers" onchange="toggleHideMarkers(this.checked)">
-      Скрыть точки
-    </label>
+    <button class="action-btn" id="btn-hide-markers" onclick="toggleHideMarkers()">Скрыть точки</button>
     <label class="cat-item" id="chk-cossu-radius-label" style="margin-top:4px;display:none">
       <input type="checkbox" id="chk-cossu-radius" onchange="toggleCossuRadius(this.checked)">
       Показать радиус
@@ -1290,7 +1287,7 @@ function startApp() {
       if (head) head.style.display = 'none';
       if (body) body.style.display = 'none';
     });
-    document.getElementById('chk-hide-markers').closest('label').style.display = 'none';
+    document.getElementById('btn-hide-markers').style.display = 'none';
     document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
     document.querySelector('[onclick="openCossuModal()"]').style.display = 'none';
@@ -1471,7 +1468,9 @@ async function loadViewportPoints() {
     // чтобы кружки на мелком зуме тоже скрывали отфильтрованные дома.
     const confArr = [...activeConf];
     const confQ = confArr.length < 4 ? `&conf=${confArr.join(',')}` : '';
-    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}${catsQ}${confQ}`;
+    // Фильтр района — считаем кружки только внутри его полигона (по id_rai)
+    const raiQ = (activeDistrict !== 'all') ? `&id_rai=${activeDistrict}` : '';
+    const url = `/api/pop/clusters?w=${b.getWest()}&s=${b.getSouth()}&e=${b.getEast()}&n=${b.getNorth()}&zoom=${map.getZoom()}${catsQ}${confQ}${raiQ}`;
     try {
       const r = await fetch(url, { credentials: 'include' });
       if (r.ok) renderPopClusters(await r.json());
@@ -1598,34 +1597,45 @@ function buildRegionAggregates() {
 }
 
 // Перестраивает панель "Районы" под текущий регион
-function updateDistrictPanel(regionLabel) {
-  if (regionLabel === currentDetectedRegion) return;
-  currentDetectedRegion = regionLabel;
+let _raionGeoms = {};            // id_rai → { geom, bbox } для пространственного фильтра
+let _activeDistrictGeom = null;  // геометрия выбранного района
+let _activeDistrictBbox = null;  // его bbox (быстрый отсев перед PIP)
 
-  // Сбрасываем фильтр при смене региона
+async function updateDistrictPanel(idReg) {
+  if (idReg === currentDetectedRegion) return;   // область не менялась
+  currentDetectedRegion = idReg;
+  // Сброс фильтра при смене области
   activeDistrict = 'all';
+  _activeDistrictGeom = null; _activeDistrictBbox = null;
 
-  const body   = document.getElementById('dists-body');
-  const badge  = document.getElementById('dists-region-label');
-  const rainames = (regionLabel && regionRainameMap[regionLabel]) || [];
+  const body  = document.getElementById('dists-body');
+  const badge = document.getElementById('dists-region-label');
+  const tail  = '<div style="margin-top:6px"><span class="clear-link" onclick="clearDists()">Показать все районы</span></div>';
+  const allRow = '<label class="dist-item"><input type="radio" name="dist" value="all" checked onchange="applyDistrict()"> Все районы</label>';
 
-  // Обновляем подпись в заголовке секции
-  if (badge) badge.textContent = regionLabel && rainames.length ? `— ${regionLabel}` : '';
-
-  let html = '<label class="dist-item"><input type="radio" name="dist" value="all" checked onchange="applyDistrict()"> Все районы</label>';
-
-  if (rainames.length) {
-    for (const rn of rainames) {
-      // Убираем префикс "район " для читабельности
-      const display = rn.startsWith('район ') ? rn.slice(6) : rn;
-      html += `<label class="dist-item"><input type="radio" name="dist" value="${rn}" onchange="applyDistrict()"> ${display}</label>`;
-    }
-  } else {
-    html += '<div style="margin-top:4px;font-size:11px;color:#94a3b8">Данных по районам нет</div>';
+  if (idReg == null) {
+    if (badge) badge.textContent = '';
+    body.innerHTML = allRow + tail;
+    return;
   }
 
-  html += '<div style="margin-top:6px"><span class="clear-link" onclick="clearDists()">Показать все районы</span></div>';
-  body.innerHTML = html;
+  const l68 = await _getL68();                    // границы районов (кэш)
+  if (currentDetectedRegion !== idReg) return;    // область сменилась, пока грузили
+  const feats = (l68.features || [])
+    .filter(f => f.properties && f.properties.id_reg === idReg)
+    .sort((a, b) => (a.properties.name || '').localeCompare(b.properties.name || '', 'ru'));
+
+  _raionGeoms = {};
+  let html = allRow;
+  for (const f of feats) {
+    const id = f.properties.id_rai;
+    _raionGeoms[id] = { geom: f.geometry, bbox: f.properties.bbox };
+    const name = f.properties.name || ('Район ' + id);
+    html += `<label class="dist-item"><input type="radio" name="dist" value="${id}" onchange="applyDistrict()"> ${name}</label>`;
+  }
+  if (!feats.length) html += '<div style="margin-top:4px;font-size:11px;color:#94a3b8">Данных по районам нет</div>';
+  if (badge) badge.textContent = '';
+  body.innerHTML = html + tail;
 }
 
 // filteredList — передаётся из renderPlaces при активных фильтрах.
@@ -1702,7 +1712,10 @@ function _renderPopHeader() {
     document.getElementById('st-people-label').textContent = 'Людей:';
     document.getElementById('st-people').textContent = people.toLocaleString('ru');
   }
-  updateDistrictPanel(region ? region.label : null);
+  // Панель районов — по определённой области (id_reg): районы берём из границ
+  // L68 (чистые названия), фильтруем точки пространственно. Работает на любом
+  // зуме, где показывается область.
+  updateDistrictPanel(region ? region.id_reg : null);
 }
 
 // Обновить шапку населения из любого места (учитывает зум/загруженность точек)
@@ -1777,7 +1790,7 @@ async function _autoDetectPopRegion() {
     if (props && props.id_reg != null) {
       const st = await _getOblastStats(props.id_reg);
       if (token !== _popDetectToken) return;
-      region = st || { label: props.name || '', houses: 0, people: 0 };
+      region = { ...(st || { label: props.name || '', houses: 0, people: 0, stats: {} }), id_reg: props.id_reg };
     }
   }
   _popStatsRegion = region;
@@ -2181,9 +2194,11 @@ function renderPlaces() {
       if (!match) continue;
     }
 
-    if (activeDistrict !== 'all') {
-      const pRain = (p.stats && p.stats.rainame) ? p.stats.rainame : '';
-      if (pRain !== activeDistrict) continue;
+    if (activeDistrict !== 'all' && _activeDistrictGeom) {
+      // Пространственный фильтр по выбранному району (bbox → point-in-polygon)
+      const x = p.lon, y = p.lat, b = _activeDistrictBbox;
+      if (b && (x < b[0] || x > b[2] || y < b[1] || y > b[3])) continue;
+      if (!_pointInGeom(x, y, _activeDistrictGeom)) continue;
     }
 
     visible.push(p);
@@ -2423,10 +2438,12 @@ function clearCats() {
 // ═══════════════════════════════════════════════════════
 let _cossuMarkersHidden = false;
 
-function toggleHideMarkers(hide) {
+function toggleHideMarkers() {
   if (!map) return;
+  const btn = document.getElementById('btn-hide-markers');
   // Режим ЦОССУ — управляем слоем cossuLayer
   if (isCossuRole()) {
+    const hide = !_cossuMarkersHidden;
     _cossuMarkersHidden = hide;
     if (hide) {
       if (cossuLayer && map.hasLayer(cossuLayer)) map.removeLayer(cossuLayer);
@@ -2435,10 +2452,12 @@ function toggleHideMarkers(hide) {
     } else {
       _renderCossuLayer();
     }
+    if (btn) btn.textContent = hide ? 'Показать точки' : 'Скрыть точки';
     return;
   }
   // Обычный режим (население) — и дома (clusterGroup), и кружки-агрегаты (popClusterLayer)
   if (!clusterGroup) return;
+  const hide = !_popHidden;
   _popHidden = hide;
   if (hide) {
     if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
@@ -2448,6 +2467,7 @@ function toggleHideMarkers(hide) {
     if (popClusterLayer && !map.hasLayer(popClusterLayer)) map.addLayer(popClusterLayer);
     loadViewportPoints();
   }
+  if (btn) btn.textContent = hide ? 'Показать точки' : 'Скрыть точки';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3006,11 +3026,9 @@ function toggleKandasLens(on) {
   if (on) {
     // Скрыть обычные точки, показать кандасов
     if (clusterGroup && map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
-    document.getElementById('chk-hide-markers').checked = true;
     loadKandasLayer();
   } else {
     // Вернуть обычные точки, убрать слой кандасов
-    document.getElementById('chk-hide-markers').checked = false;
     if (clusterGroup && !map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
     if (kandasLayer) { map.removeLayer(kandasLayer); kandasLayer = null; }
   }
@@ -4533,12 +4551,17 @@ async function clearCossuCoord(orgBin) {
 function applyDistrict() {
   const sel = document.querySelector('input[name="dist"]:checked');
   activeDistrict = sel ? sel.value : 'all';
-  renderPlaces();
+  const g = (activeDistrict !== 'all') ? _raionGeoms[activeDistrict] : null;
+  _activeDistrictGeom = g ? g.geom : null;
+  _activeDistrictBbox = g ? g.bbox : null;
+  _applyFilters();   // мелкий зум — перезапросить кружки с id_rai, крупный — перерисовать
 }
 function clearDists() {
-  document.querySelector('input[name="dist"][value="all"]').checked = true;
+  const all = document.querySelector('input[name="dist"][value="all"]');
+  if (all) all.checked = true;
   activeDistrict = 'all';
-  renderPlaces();
+  _activeDistrictGeom = null; _activeDistrictBbox = null;
+  _applyFilters();
 }
 
 // ═══════════════════════════════════════════════════════
