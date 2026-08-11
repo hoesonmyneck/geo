@@ -24,7 +24,10 @@ BKEY = f"""CASE
 END"""
 
 FLAGS = ["trud_vozrast", "deti_do18", "working", "lsi", "asp",
-         "student", "pensioners", "ip", "kandas"]
+         "student", "pensioners", "ip", "kandas",
+         # добавленные статусы (были в выгрузке, но не клали на карту)
+         "mnogodetnyi", "woman_uhod_do3", "rt_unemployed",
+         "foreigners", "uhod_inv", "cbd", "berem"]
 
 
 def main() -> None:

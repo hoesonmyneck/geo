@@ -12,7 +12,9 @@ import psycopg
 
 DSN = "host=localhost port=5432 dbname=geo user=geo password=geopassword123"
 FLAGS = ["total", "male", "female", "lsi", "asp", "deti_do18", "trud_vozrast",
-         "working", "student", "pensioners", "ip", "kandas"]
+         "working", "student", "pensioners", "ip", "kandas",
+         "mnogodetnyi", "woman_uhod_do3", "rt_unemployed",
+         "foreigners", "uhod_inv", "cbd", "berem"]
 
 
 def load(conn, path, level):

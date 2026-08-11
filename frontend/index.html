@@ -581,6 +581,13 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <label class="cat-item"><input type="checkbox" value="pensioners"> Пенсионеры</label>
     <label class="cat-item"><input type="checkbox" value="ip">         ИП</label>
     <label class="cat-item"><input type="checkbox" value="kandas">     КАНДАС</label>
+    <label class="cat-item"><input type="checkbox" value="mnogodetnyi">    Многодетные</label>
+    <label class="cat-item"><input type="checkbox" value="woman_uhod_do3"> Уход за реб. до 3 лет</label>
+    <label class="cat-item"><input type="checkbox" value="rt_unemployed">  Безработные</label>
+    <label class="cat-item"><input type="checkbox" value="foreigners">     Иностранцы</label>
+    <label class="cat-item"><input type="checkbox" value="uhod_inv">       Уход за инвалидом</label>
+    <label class="cat-item"><input type="checkbox" value="cbd">            Выплата ЦБД</label>
+    <label class="cat-item"><input type="checkbox" value="berem">          Беременные</label>
     <div style="margin-top:6px">
       <span class="clear-link" onclick="clearCats()">Сбросить</span>
     </div>
@@ -1004,6 +1011,9 @@ const CAT_LABELS = {
   lsi: 'ЛСИ', asp: 'АСП', deti_do18: 'Детей до 18', trud_vozrast: 'Труд. возраста',
   working: 'Работающих', student: 'Студентов', pensioners: 'Пенсионеров',
   ip: 'ИП', kandas: 'Кандасов',
+  mnogodetnyi: 'Многодетных', woman_uhod_do3: 'Уход за реб. до 3 лет',
+  rt_unemployed: 'Безработных', foreigners: 'Иностранцев',
+  uhod_inv: 'Уход за инвалидом', cbd: 'Выплата ЦБД', berem: 'Беременных',
 };
 
 let drawLayer    = null;
@@ -1987,10 +1997,13 @@ async function fetchDistricts() {
           .setLatLng(e.latlng)
           .setContent(buildAreaPopup(name, showOblast, {}, '…'))
           .openOn(map);
+        // Карточку можно двигать мышью (как у ЦОССУ/кандасов)
+        const dragify = () => { const el = popup.getElement(); if (el) _makePopupDraggable(el); };
+        dragify();
         if (areaId != null) {
           fetch(`/api/pop/area?level=${level}&id=${areaId}`, { credentials: 'include' })
             .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d) popup.setContent(buildAreaPopup(name, showOblast, d.stats || {}, d.n || 0)); })
+            .then(d => { if (d) { popup.setContent(buildAreaPopup(name, showOblast, d.stats || {}, d.n || 0)); dragify(); } })
             .catch(() => {});
         }
       });
@@ -2144,7 +2157,8 @@ function renderPlaces() {
       } else {
         // Несколько адресов на одной точке — суммируем их stats.
         const merged = {...bucket.places[0]};
-        const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas'];
+        const keys = ['total','male','female','trud_vozrast','deti_do18','working','lsi','asp','student','pensioners','ip','kandas',
+                      'mnogodetnyi','woman_uhod_do3','rt_unemployed','foreigners','uhod_inv','cbd','berem'];
         merged.stats = {};
         for (const k of keys) merged.stats[k] = bucket.places.reduce((acc, p) => acc + ((p.stats||{})[k]||0), 0);
         merged.stats.regname = bucket.places[0].stats?.regname || null;
@@ -2176,19 +2190,26 @@ function buildAreaPopup(name, isOblast, stats, placeCount) {
   const areaLabel = isOblast ? 'Область / регион' : 'Район';
   return `<div class="geo-popup">
     <h4 style="font-size:14px">${name}</h4>
-    <div style="font-size:11px;color:#64748b;margin-bottom:6px">${areaLabel} &nbsp;·&nbsp; ${placeCount} адресов</div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">${areaLabel} &nbsp;·&nbsp; ${typeof placeCount === 'number' ? fmtNum(placeCount) : placeCount} адресов</div>
     <table>
-      <tr><td>Всего жителей</td><td>${s.total||0}</td></tr>
-      <tr><td>Мужчин / Женщин</td><td>${(s.male||0)} / ${(s.female||0)}</td></tr>
-      <tr><td>ЛСИ</td><td>${s.lsi||0}</td></tr>
-      <tr><td>АСП</td><td>${s.asp||0}</td></tr>
-      <tr><td>Дети до 18</td><td>${s.deti_do18||0}</td></tr>
-      <tr><td>Труд. возраст</td><td>${s.trud_vozrast||0}</td></tr>
-      <tr><td>Работающие</td><td>${s.working||0}</td></tr>
-      <tr><td>Студенты</td><td>${s.student||0}</td></tr>
-      <tr><td>Пенсионеры</td><td>${s.pensioners||0}</td></tr>
-      <tr><td>ИП</td><td>${s.ip||0}</td></tr>
-      <tr><td>КАНДАС</td><td>${s.kandas||0}</td></tr>
+      <tr><td>Всего жителей</td><td>${fmtNum(s.total)}</td></tr>
+      <tr><td>Мужчин / Женщин</td><td>${fmtNum(s.male)} / ${fmtNum(s.female)}</td></tr>
+      <tr><td>ЛСИ</td><td>${fmtNum(s.lsi)}</td></tr>
+      <tr><td>АСП</td><td>${fmtNum(s.asp)}</td></tr>
+      <tr><td>Дети до 18</td><td>${fmtNum(s.deti_do18)}</td></tr>
+      <tr><td>Труд. возраст</td><td>${fmtNum(s.trud_vozrast)}</td></tr>
+      <tr><td>Работающие</td><td>${fmtNum(s.working)}</td></tr>
+      <tr><td>Студенты</td><td>${fmtNum(s.student)}</td></tr>
+      <tr><td>Пенсионеры</td><td>${fmtNum(s.pensioners)}</td></tr>
+      <tr><td>ИП</td><td>${fmtNum(s.ip)}</td></tr>
+      <tr><td>КАНДАС</td><td>${fmtNum(s.kandas)}</td></tr>
+      <tr><td>Многодетные</td><td>${fmtNum(s.mnogodetnyi)}</td></tr>
+      <tr><td>Уход за реб. до 3 лет</td><td>${fmtNum(s.woman_uhod_do3)}</td></tr>
+      <tr><td>Безработные</td><td>${fmtNum(s.rt_unemployed)}</td></tr>
+      <tr><td>Иностранцы</td><td>${fmtNum(s.foreigners)}</td></tr>
+      <tr><td>Уход за инвалидом</td><td>${fmtNum(s.uhod_inv)}</td></tr>
+      <tr><td>Выплата ЦБД</td><td>${fmtNum(s.cbd)}</td></tr>
+      <tr><td>Беременные</td><td>${fmtNum(s.berem)}</td></tr>
     </table>
   </div>`;
 }
@@ -2198,6 +2219,9 @@ function escHtml(s) {
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
   ));
 }
+
+// Число с разделителями разрядов: 221345 → «221 345»
+function fmtNum(x) { return (Number(x) || 0).toLocaleString('ru-RU'); }
 
 // Сворачивание/разворачивание списка адресов в попапе точки населения.
 function togglePopupAddrs(btn) {
@@ -2243,6 +2267,13 @@ function buildPopup(p) {
       <tr><td>Пенсионеры</td><td>${s.pensioners||0}</td></tr>
       <tr><td>ИП</td><td>${s.ip||0}</td></tr>
       <tr><td>КАНДАС</td><td>${s.kandas||0}</td></tr>
+      <tr><td>Многодетные</td><td>${s.mnogodetnyi||0}</td></tr>
+      <tr><td>Уход за реб. до 3 лет</td><td>${s.woman_uhod_do3||0}</td></tr>
+      <tr><td>Безработные</td><td>${s.rt_unemployed||0}</td></tr>
+      <tr><td>Иностранцы</td><td>${s.foreigners||0}</td></tr>
+      <tr><td>Уход за инвалидом</td><td>${s.uhod_inv||0}</td></tr>
+      <tr><td>Выплата ЦБД</td><td>${s.cbd||0}</td></tr>
+      <tr><td>Беременные</td><td>${s.berem||0}</td></tr>
     </table>
     ${p.lat ? `<div class="coords">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>` : ''}
     ${canEdit && !p._addresses ? `<button class="edit-btn" onclick="openCoordFromMap(${p.id})">Изменить координату</button>` : ''}
