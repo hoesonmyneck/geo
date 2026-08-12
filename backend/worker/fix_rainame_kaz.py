@@ -32,16 +32,20 @@ FIX = {
 }
 
 c = psycopg.connect(DSN, autocommit=True)
+# pop_v3 — staging-таблица сырья; на проде её может не быть (там только pop_dwelling).
+has_pop_v3 = c.execute("SELECT to_regclass('public.pop_v3') IS NOT NULL").fetchone()[0]
 for bad, good in FIX.items():
     n1 = c.execute(
         "UPDATE pop_dwelling SET stats = jsonb_set(stats, '{rainame}', to_jsonb(%s::text)) "
         "WHERE stats->>'rainame' = %s",
         (good, bad),
     ).rowcount
-    n2 = c.execute(
-        "UPDATE pop_v3 SET name_cato1 = %s WHERE name_cato1 = %s",
-        (good, bad),
-    ).rowcount
+    n2 = "—"
+    if has_pop_v3:
+        n2 = c.execute(
+            "UPDATE pop_v3 SET name_cato1 = %s WHERE name_cato1 = %s",
+            (good, bad),
+        ).rowcount
     print(f"  {bad:<20} → {good:<20} pop_dwelling:{n1}  pop_v3:{n2}", flush=True)
 
 left = c.execute("SELECT count(*) FROM pop_dwelling WHERE stats->>'rainame' LIKE '%?%'").fetchone()[0]
