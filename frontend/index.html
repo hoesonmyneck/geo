@@ -46,7 +46,18 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   background:#fff; border-right:1px solid #e2e8f0;
   overflow-y:auto; z-index:1000;
   display:flex; flex-direction:column;
+  scrollbar-width:thin; scrollbar-color:#cbd5e1 transparent;   /* Firefox */
 }
+/* Кастомный скроллбар сайдбара (WebKit): тонкий «плавающий» ползунок */
+#sidebar::-webkit-scrollbar { width:9px; }
+#sidebar::-webkit-scrollbar-track { background:transparent; }
+#sidebar::-webkit-scrollbar-thumb {
+  background:#cbd5e1; border-radius:9px;
+  border:2px solid #fff; background-clip:padding-box;
+  transition:background .2s;
+}
+#sidebar::-webkit-scrollbar-thumb:hover { background:#93a4b8; }
+#sidebar::-webkit-scrollbar-thumb:active { background:#2563eb; }
 #sidebar-header {
   padding:13px 16px; background:#2563eb; color:#fff;
   font-size:14px; font-weight:600; letter-spacing:.2px; flex-shrink:0;
@@ -2316,7 +2327,6 @@ function buildAreaPopup(name, isOblast, stats, placeCount) {
       <tr><td>ЛСИ</td><td>${fmtNum(s.lsi)}</td></tr>
       <tr><td>АСП</td><td>${fmtNum(s.asp)}</td></tr>
       <tr><td>Дети до 18</td><td>${fmtNum(s.deti_do18)}</td></tr>
-      <tr><td>Труд. возраст</td><td>${fmtNum(s.trud_vozrast)}</td></tr>
       <tr><td>Работающие</td><td>${fmtNum(s.working)}</td></tr>
       <tr><td>Студенты</td><td>${fmtNum(s.student)}</td></tr>
       <tr><td>Пенсионеры</td><td>${fmtNum(s.pensioners)}</td></tr>
@@ -2380,7 +2390,6 @@ function buildPopup(p) {
       <tr><td>ЛСИ</td><td>${s.lsi||0}</td></tr>
       <tr><td>АСП</td><td>${s.asp||0}</td></tr>
       <tr><td>Дети до 18</td><td>${s.deti_do18||0}</td></tr>
-      <tr><td>Труд. возраст</td><td>${s.trud_vozrast||0}</td></tr>
       <tr><td>Работающие</td><td>${s.working||0}</td></tr>
       <tr><td>Студенты</td><td>${s.student||0}</td></tr>
       <tr><td>Пенсионеры</td><td>${s.pensioners||0}</td></tr>
