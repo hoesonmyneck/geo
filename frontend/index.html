@@ -15,30 +15,31 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 /* ── Экран авторизации ── */
 #auth-overlay {
   position:fixed; inset:0; z-index:99999;
-  background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);
+  background:linear-gradient(135deg,#2563eb 0%,#1e3a8a 100%);
   display:flex; align-items:center; justify-content:center;
 }
 #auth-box {
-  background:#1e293b; border:1px solid #334155; border-radius:16px;
-  padding:40px 48px; width:360px; box-shadow:0 25px 60px rgba(0,0,0,.5);
+  background:#fff; border:1px solid #dbeafe; border-radius:16px;
+  padding:40px 48px; width:360px; box-shadow:0 25px 60px rgba(30,58,138,.35);
 }
-#auth-box h2 { color:#f1f5f9; font-size:22px; font-weight:700; margin-bottom:6px; text-align:center; }
+#auth-box h2 { color:#1e293b; font-size:22px; font-weight:700; margin-bottom:6px; text-align:center; }
 #auth-box p  { color:#64748b; font-size:13px; text-align:center; margin-bottom:28px; }
 .auth-field { margin-bottom:16px; }
-.auth-field label { display:block; color:#94a3b8; font-size:12px; font-weight:600;
+.auth-field label { display:block; color:#2563eb; font-size:12px; font-weight:600;
   letter-spacing:.05em; text-transform:uppercase; margin-bottom:6px; }
 .auth-field input {
-  width:100%; padding:10px 14px; background:#0f172a; border:1px solid #334155;
-  border-radius:8px; color:#f1f5f9; font-size:14px; outline:none; transition:border-color .2s;
+  width:100%; padding:10px 14px; background:#f8fafc; border:1px solid #cbd5e1;
+  border-radius:8px; color:#1e293b; font-size:14px; outline:none; transition:border-color .2s;
+  box-sizing:border-box;
 }
-.auth-field input:focus { border-color:#3b82f6; }
+.auth-field input:focus { border-color:#2563eb; }
 #auth-btn {
   width:100%; padding:12px; margin-top:8px;
-  background:#3b82f6; color:#fff; font-size:15px; font-weight:600;
+  background:#2563eb; color:#fff; font-size:15px; font-weight:600;
   border:none; border-radius:8px; cursor:pointer; transition:background .2s;
 }
-#auth-btn:hover { background:#2563eb; }
-#auth-error { color:#f87171; font-size:13px; text-align:center; margin-top:12px; min-height:18px; }
+#auth-btn:hover { background:#1d4ed8; }
+#auth-error { color:#dc2626; font-size:13px; text-align:center; margin-top:12px; min-height:18px; }
 
 /* ── Сайдбар ── */
 #sidebar {
@@ -1038,7 +1039,7 @@ async function doLogin() {
       body: JSON.stringify({login, password: pass}),
     });
     if (!r.ok) {
-      _setAuthMsg('Неверный логин или пароль', '#f87171');
+      _setAuthMsg('Неверный логин или пароль', '#dc2626');
       return;
     }
     const data = await r.json();
@@ -1051,7 +1052,7 @@ async function doLogin() {
     currentUser = data.user;
     startApp();
   } catch(e) {
-    _setAuthMsg('Ошибка сети: ' + e.message, '#f87171');
+    _setAuthMsg('Ошибка сети: ' + e.message, '#dc2626');
   }
 }
 document.getElementById('auth-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
@@ -1120,13 +1121,13 @@ async function runEdsSecondFactor(challenge) {
   try {
     ws = await _openNCALayer();
   } catch (e) {
-    _setAuthMsg('NCALayer не запущен или недоступен. Запустите NCALayer (pki.gov.kz) и попробуйте снова.', '#f87171');
+    _setAuthMsg('NCALayer не запущен или недоступен. Запустите NCALayer (pki.gov.kz) и попробуйте снова.', '#dc2626');
     return;
   }
   let timeoutId = null;
   ws.onerror = () => {
     clearTimeout(timeoutId);
-    _setAuthMsg('Ошибка соединения с NCALayer', '#f87171');
+    _setAuthMsg('Ошибка соединения с NCALayer', '#dc2626');
   };
 
   _setAuthMsg('Подключено, ожидание NCALayer...');
@@ -1158,7 +1159,7 @@ async function runEdsSecondFactor(challenge) {
     try {
       response = JSON.parse(event.data);
     } catch (e) {
-      _setAuthMsg('Невалидный ответ от NCALayer', '#f87171');
+      _setAuthMsg('Невалидный ответ от NCALayer', '#dc2626');
       try { ws.close(); } catch {}
       return;
     }
@@ -1174,7 +1175,7 @@ async function runEdsSecondFactor(challenge) {
     // Ошибка от NCALayer
     if (response.code && response.code !== '200') {
       const msg = response.message || response.code || 'отменено пользователем';
-      _setAuthMsg('Подпись не получена: ' + msg + ' (см. консоль)', '#f87171');
+      _setAuthMsg('Подпись не получена: ' + msg + ' (см. консоль)', '#dc2626');
       try { ws.close(); } catch {}
       return;
     }
@@ -1184,7 +1185,7 @@ async function runEdsSecondFactor(challenge) {
     const signature = response.responseObject ||
       (typeof response.result === 'string' ? response.result : null);
     if (!signature) {
-      _setAuthMsg('Подпись не получена (пустой ответ)', '#f87171');
+      _setAuthMsg('Подпись не получена (пустой ответ)', '#dc2626');
       try { ws.close(); } catch {}
       return;
     }
@@ -1201,13 +1202,13 @@ async function runEdsSecondFactor(challenge) {
       });
       if (!loginR.ok) {
         const err = await loginR.json().catch(() => ({ detail: 'Ошибка ' + loginR.status }));
-        _setAuthMsg(err.detail || 'Ошибка авторизации', '#f87171');
+        _setAuthMsg(err.detail || 'Ошибка авторизации', '#dc2626');
         return;
       }
       currentUser = await loginR.json();
       startApp();
     } catch (e) {
-      _setAuthMsg('Ошибка сети: ' + e.message, '#f87171');
+      _setAuthMsg('Ошибка сети: ' + e.message, '#dc2626');
     }
   };
 }
@@ -2139,16 +2140,11 @@ async function fetchDistricts() {
     },
   }).addTo(map);
 
+  // Легенда районов/областей в сайдбаре отключена по требованию —
+  // подсветка границ и попапы на карте остаются.
   const leg = document.getElementById('dist-legend');
-  const sorted = [...new Map(legendItems.map(x => [x.name, x])).values()]
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  leg.innerHTML = sorted.map(({name, col}) =>
-    `<span style="display:inline-flex;align-items:center;margin-right:6px;white-space:nowrap">
-      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col};margin-right:4px;border:1px solid rgba(0,0,0,.15)"></span>
-      ${name}
-    </span>`
-  ).join('');
-  leg.style.display = sorted.length > 0 ? 'block' : 'none';
+  leg.style.display = 'none';
+  leg.innerHTML = '';
 }
 
 // Перерисовка границ при смене зума или перемещении карты
