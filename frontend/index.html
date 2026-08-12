@@ -499,10 +499,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     <button class="action-btn" onclick="openCossuStats()">Статистика ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <button class="action-btn" id="btn-hide-markers" onclick="toggleHideMarkers()">Скрыть точки</button>
-    <label class="cat-item" id="chk-cossu-radius-label" style="margin-top:4px;display:none">
-      <input type="checkbox" id="chk-cossu-radius" onchange="toggleCossuRadius(this.checked)">
-      Показать радиус
-    </label>
+    <button class="action-btn" id="btn-cossu-radius" onclick="toggleCossuRadius()" style="display:none">Показать радиус</button>
     <!-- <label class="cat-item" style="margin-top:4px">
       <input type="checkbox" id="chk-kandas-lens" onchange="toggleKandasLens(this.checked)">
       <span style="color:#2563eb;font-weight:600">Линза кандасов</span>
@@ -1323,8 +1320,8 @@ function startApp() {
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
     // Галочку "Скрыть точки" оставляем видимой (работает со слоем ЦОССУ)
-    // Показываем галочку радиуса
-    document.getElementById('chk-cossu-radius-label').style.display = '';
+    // Показываем кнопку радиуса
+    document.getElementById('btn-cossu-radius').style.display = '';
     // Показываем стат-панель с ЦОССУ-блоком
     document.getElementById('stats-panel').style.display = 'block';
     document.getElementById('st-cossu-info').style.display = 'block';
@@ -3331,9 +3328,11 @@ let cossuLineMode = 'type';
 let cossuRadiusLayer = null;
 let cossuShowRadius = false;
 
-function toggleCossuRadius(on) {
-  cossuShowRadius = on;
-  if (!on && cossuRadiusLayer) {
+function toggleCossuRadius() {
+  cossuShowRadius = !cossuShowRadius;
+  const btn = document.getElementById('btn-cossu-radius');
+  if (btn) btn.textContent = cossuShowRadius ? 'Скрыть радиус' : 'Показать радиус';
+  if (!cossuShowRadius && cossuRadiusLayer) {
     map.removeLayer(cossuRadiusLayer);
     cossuRadiusLayer = null;
   }
