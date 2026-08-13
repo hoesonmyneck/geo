@@ -333,6 +333,16 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 .geo-popup .addr-list div { padding:2px 0; border-bottom:1px solid #eef2f7; color:#334155; }
 .geo-popup .addr-list div:last-child { border-bottom:none; }
 .geo-popup .hidden { display:none; }
+/* Текст попапа можно выделять/копировать */
+.geo-popup, .leaflet-popup-content { user-select:text; -webkit-user-select:text; }
+/* Ручка перетаскивания попапа (тащим только за неё — не мешает выделять текст) */
+.popup-drag {
+  text-align:center; letter-spacing:3px; color:#cbd5e1;
+  font-size:13px; line-height:1; padding:5px 0 2px; margin:8px -2px 0;
+  cursor:move; user-select:none; -webkit-user-select:none;
+  border-top:1px solid #f1f5f9;
+}
+.popup-drag:hover { color:#94a3b8; }
 
 /* ── Линза выбора раздела (сверху слева, справа от кнопок зума +/−) ── */
 #section-lens {
@@ -775,10 +785,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 <div class="modal-overlay" id="coord-modal">
   <div class="coord-box">
     <h3 id="coord-title">Задать координаты</h3>
-    <label>Широта (lat)</label>
-    <input id="coord-lat" type="number" step="0.000001" placeholder="51.18"/>
-    <label>Долгота (lon)</label>
-    <input id="coord-lon" type="number" step="0.000001" placeholder="71.44"/>
+    <label>Координаты (широта, долгота)</label>
+    <input id="coord-latlon" type="text" placeholder="51.123358, 71.414926"/>
     <label>Причина изменения</label>
     <textarea id="coord-reason" rows="2" placeholder="Необязательно"></textarea>
     <div class="btn-row">
@@ -3404,18 +3412,33 @@ function _cossuMarkerIcon(types, isPrivate) {
 // Leaflet при каждом открытии заново выставляет transform контейнера (позицию привязки),
 // поэтому попап всегда открывается на стандартном месте, а не там куда его утащили.
 function _makePopupDraggable(el) {
-  const handle = el.querySelector('.leaflet-popup-content-wrapper') || el;
-  handle.style.cursor = 'move';
+  const content = el.querySelector('.leaflet-popup-content')
+    || el.querySelector('.leaflet-popup-content-wrapper') || el;
+  content.style.userSelect = 'text';
+
+  // Отдельная ручка снизу (над кнопкой «Изменить координату», иначе — в самом
+  // низу карточки) — тащим попап только за неё, чтобы текст (адрес, координаты)
+  // можно было спокойно выделять и копировать.
+  const box = content.querySelector('.geo-popup') || content;
+  let handle = box.querySelector('.popup-drag');
+  if (!handle) {
+    handle = document.createElement('div');
+    handle.className = 'popup-drag';
+    handle.title = 'Перетащить';
+    handle.textContent = '⠿⠿⠿';
+    const editBtn = box.querySelector('.edit-btn');
+    if (editBtn) box.insertBefore(handle, editBtn);
+    else box.appendChild(handle);
+  }
 
   // Базовый transform от Leaflet (свежая позиция привязки на момент открытия)
   const baseTransform = el.style.transform || '';
   el._dragX = 0; el._dragY = 0;
 
   // Снимаем прошлый обработчик, если попап переиспользуется
-  if (el._dragDown) handle.removeEventListener('mousedown', el._dragDown);
+  if (el._dragHandle && el._dragDown) el._dragHandle.removeEventListener('mousedown', el._dragDown);
 
   const onDown = (ev) => {
-    if (ev.target.closest('button, a, input, select, textarea')) return;
     ev.preventDefault();
     const startX = ev.clientX, startY = ev.clientY;
     const ox = el._dragX, oy = el._dragY;
@@ -3434,7 +3457,7 @@ function _makePopupDraggable(el) {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   };
-  el._dragDown = onDown;
+  el._dragDown = onDown; el._dragHandle = handle;
   handle.addEventListener('mousedown', onDown);
 }
 
@@ -4772,11 +4795,20 @@ function flyTo(lat, lon, id) {
 // ═══════════════════════════════════════════════════════
 //  Редактирование координат
 // ═══════════════════════════════════════════════════════
+// Разбор пары координат из одного поля: "51.123358, 71.414926" | "51.12 71.41" и т.п.
+function _parseLatLon(s) {
+  const parts = String(s || '').trim().split(/[,;\s]+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const lat = parseFloat(parts[0]);
+  const lon = parseFloat(parts[1]);
+  if (isNaN(lat) || isNaN(lon)) return null;
+  return { lat, lon };
+}
+
 function openCoordModal(id, title) {
   editingId = id;
   document.getElementById('coord-title').textContent = 'Координаты: ' + title;
-  document.getElementById('coord-lat').value = '';
-  document.getElementById('coord-lon').value = '';
+  document.getElementById('coord-latlon').value = '';
   document.getElementById('coord-reason').value = '';
   document.getElementById('coord-modal').classList.add('open');
 }
@@ -4786,8 +4818,7 @@ function openCoordFromMap(id) {
   const addr = `${p.street_name}${p.house ? ', ' + p.house : ''}`;
   openCoordModal(id, addr);
   if (p.lat) {
-    document.getElementById('coord-lat').value = p.lat.toFixed(6);
-    document.getElementById('coord-lon').value = p.lon.toFixed(6);
+    document.getElementById('coord-latlon').value = `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}`;
   }
 }
 function closeCoordModal() {
@@ -4803,8 +4834,7 @@ function startMapPick() {
   map.once('click', onMapPick);
 }
 function onMapPick(e) {
-  document.getElementById('coord-lat').value = e.latlng.lat.toFixed(6);
-  document.getElementById('coord-lon').value = e.latlng.lng.toFixed(6);
+  document.getElementById('coord-latlon').value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
   stopMapPick();
   document.getElementById('coord-modal').classList.add('open');
 }
@@ -4818,10 +4848,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickingCoo
 
 async function saveCoords() {
   if (!editingId) return;
-  const lat    = parseFloat(document.getElementById('coord-lat').value);
-  const lon    = parseFloat(document.getElementById('coord-lon').value);
+  const parsed = _parseLatLon(document.getElementById('coord-latlon').value);
   const reason = document.getElementById('coord-reason').value.trim();
-  if (isNaN(lat) || isNaN(lon)) { alert('Введите корректные координаты'); return; }
+  if (!parsed) { alert('Введите координаты в формате: 51.123358, 71.414926'); return; }
+  const { lat, lon } = parsed;
   const r = await fetch(`${API}/api/pop/${editingId}/coords`, {
     method:'PATCH', credentials:'include',
     headers:{'Content-Type':'application/json'},
