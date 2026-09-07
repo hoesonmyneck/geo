@@ -505,10 +505,15 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   <div id="tools-body" class="s-body">
     <button class="action-btn" onclick="openListModal()">Список адресов</button>
     <button class="action-btn" id="btn-kandas-list" onclick="openKandasModal()">Список кандасов</button>
+    <button class="action-btn" id="btn-kandas-import" style="display:none"
+            onclick="document.getElementById('kandas-import-file').click()">Загрузить выгрузку (xlsx)</button>
+    <input type="file" id="kandas-import-file" accept=".xlsx,.xls" style="display:none"
+           onchange="importKandasFile(this)">
     <button class="action-btn" onclick="openCossuModal()">Список ЦОССУ</button>
     <button class="action-btn" onclick="openCossuStats()">Статистика ЦОССУ</button>
     <button class="action-btn" id="btn-districts" onclick="toggleDistricts()">Показать подсветку границ</button>
     <button class="action-btn" id="btn-hide-markers" onclick="toggleHideMarkers()">Скрыть точки</button>
+    <button class="action-btn" id="btn-imprecise" onclick="toggleImprecise()">Показать неточные точки</button>
     <button class="action-btn" id="btn-cossu-radius" onclick="toggleCossuRadius()" style="display:none">Показать радиус</button>
     <!-- <label class="cat-item" style="margin-top:4px">
       <input type="checkbox" id="chk-kandas-lens" onchange="toggleKandasLens(this.checked)">
@@ -587,8 +592,8 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
     Категории жителей <span id="cats-arr">&#9660;</span>
   </div>
   <div id="cats-body" class="s-body">
-    <div class="cat-hint">Показывать дома где есть хотя бы один житель выбранной категории (можно несколько)</div>
-    <label class="cat-item"><input type="checkbox" value="lsi">        ЛСИ (лица с инвалидностью)</label>
+    <div class="cat-hint">Показывать количество только выбранных категорий</div>
+    <label class="cat-item"><input type="checkbox" value="lsi">        ЛСИ </label>
     <label class="cat-item"><input type="checkbox" value="asp">        АСП</label>
     <label class="cat-item"><input type="checkbox" value="deti_do18"> Дети до 18</label>
     <label class="cat-item"><input type="checkbox" value="trud_vozrast"> Трудовой возраст</label>
@@ -624,7 +629,7 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 
   <!-- 4. Уверенность -->
   <div class="s-head" onclick="toggleSection('conf')">
-    Уверенность (дом) <span id="conf-arr">&#9660;</span>
+    Уверенность <span id="conf-arr">&#9660;</span>
   </div>
   <div id="conf-body" class="s-body">
     <div class="conf-item" data-conf="high"   onclick="toggleConf('high')">
@@ -1300,6 +1305,7 @@ function startApp() {
       if (body) body.style.display = 'none';
     });
     document.getElementById('btn-hide-markers').style.display = 'none';
+    document.getElementById('btn-imprecise').style.display = 'none';
     document.getElementById('draw-tools-section').style.display = 'none';
     document.querySelector('[onclick="openListModal()"]').style.display = 'none';
     document.querySelector('[onclick="openCossuModal()"]').style.display = 'none';
@@ -1312,6 +1318,13 @@ function startApp() {
     // Подпись кнопки списка зависит от линзы (кандасы / резиденты)
     const btnList = document.getElementById('btn-kandas-list');
     if (btnList) btnList.textContent = _isPmzView() ? 'Список резидентов' : 'Список кандасов';
+    // Загрузка выгрузки от базистов — только editor/admin
+    const btnImp = document.getElementById('btn-kandas-import');
+    if (btnImp) {
+      btnImp.style.display = canEditCurrent() ? '' : 'none';
+      btnImp.textContent = _isPmzView() ? 'Загрузить резидентов (xlsx)'
+                                        : 'Загрузить кандасов (xlsx)';
+    }
     // В дропдауне "Перейти к области" гасим неактивные опции (по текущему виду)
     _applyKandasRegionDropdown();
   } else if (isCossuRole()) {
@@ -1327,7 +1340,9 @@ function startApp() {
     document.querySelector('[onclick="openKandasModal()"]').style.display = 'none';
     document.getElementById('chk-kandas-lens')?.closest('label')?.remove();
     document.getElementById('btn-districts').style.display = '';
-    // Галочку "Скрыть точки" оставляем видимой (работает со слоем ЦОССУ)
+    // Галочку "Скрыть точки" оставляем видимой (работает со слоем ЦОССУ),
+    // а «неточные точки» — про население, в этом режиме не нужна
+    document.getElementById('btn-imprecise').style.display = 'none';
     // Показываем кнопку радиуса
     document.getElementById('btn-cossu-radius').style.display = '';
     // Показываем стат-панель с ЦОССУ-блоком
@@ -1461,6 +1476,11 @@ function _scheduleViewportLoad() {
 
 let popClusterLayer = null;
 let _popHidden = false;   // галочка «Скрыть точки» — прячет и дома, и кружки
+// ВИЗУАЛЬНОЕ скрытие неточных адресов (medium/low). НЕ фильтр: в статистику,
+// в счётчики шапки и в списки такие дома входят по-прежнему, их просто не
+// рисуем на карте. По умолчанию включено — на карте только точные адреса.
+let _hideImprecise = true;
+const IMPRECISE_CONF = new Set(['medium', 'low']);
 
 function _fmtPeople(x) {
   if (x >= 1e6) return (x / 1e6).toFixed(1).replace('.0', '') + 'М';
@@ -2236,8 +2256,16 @@ function renderPlaces() {
     visible.push(p);
   }
 
-  // Счётчики обновляются через updateViewStats() с учётом текущего viewport
+  // Счётчики обновляются через updateViewStats() с учётом текущего viewport.
+  // ВАЖНО: считаем по visible — до визуального отсева неточных адресов,
+  // иначе кнопка «Показать неточные точки» превратилась бы в фильтр.
   updateViewStats(visible);
+
+  // Визуальный отсев: неточные адреса (medium/low) на карту не рисуем,
+  // пока не нажата кнопка. На цифры в статистике это не влияет.
+  const drawable = _hideImprecise
+    ? visible.filter(p => !IMPRECISE_CONF.has(p.confidence))
+    : visible;
 
   // Шаг 2: группируем по точной координате — несколько адресов на одной точке
   // объединяются в один маркер с суммарным количеством людей.
@@ -2245,7 +2273,7 @@ function renderPlaces() {
   const CONF_ORDER = {high: 0, medium: 1, low: 2, miss: 3};
   const cats = [...activeCats];   // активные категории: цифра на кружке = их сумма
 
-  for (const p of visible) {
+  for (const p of drawable) {
     const key = `${p.lat},${p.lon}`;
     if (!coordMap.has(key)) {
       coordMap.set(key, { places: [], total: 0, catTotal: 0, bestConf: p.confidence });
@@ -2500,6 +2528,17 @@ function toggleHideMarkers() {
   if (btn) btn.textContent = hide ? 'Показать точки' : 'Скрыть точки';
 }
 
+// Показать/скрыть неточные адреса (medium/low) НА КАРТЕ. Чисто визуально:
+// фильтр уверенности в сайдбаре и все счётчики работают независимо от этого.
+function toggleImprecise() {
+  _hideImprecise = !_hideImprecise;
+  const btn = document.getElementById('btn-imprecise');
+  if (btn) {
+    btn.textContent = _hideImprecise ? 'Показать неточные точки' : 'Скрыть неточные точки';
+  }
+  if (allPlaces.length) renderPlaces();
+}
+
 // ═══════════════════════════════════════════════════════
 //  КАНДАСЫ — реестр, линза, карточки
 // ═══════════════════════════════════════════════════════
@@ -2585,6 +2624,57 @@ function _showWorkMarker(k) {
 function _hideWorkMarker() {
   if (_workMarker) { map.removeLayer(_workMarker); _workMarker = null; }
   if (_workLine)   { map.removeLayer(_workLine);   _workLine   = null; }
+}
+
+// ── Загрузка выгрузки кандасов/резидентов прямо из интерфейса ──────────────
+// Заменяет ручной цикл «scp файла на сервер + docker compose exec сидера».
+// Тип реестра берём из активного раздела; бэкенд дополнительно сверяет его
+// с колонками файла и не даст залить резидентов в кандасов и наоборот.
+async function importKandasFile(input) {
+  const file = input.files && input.files[0];
+  input.value = '';                       // чтобы повторный выбор того же файла сработал
+  if (!file) return;
+
+  const btn = document.getElementById('btn-kandas-import');
+  const label = btn ? btn.textContent : '';
+  const isPmz = _isPmzView();
+  if (!confirm(`Загрузить «${file.name}» в реестр ${isPmz ? 'резидентов' : 'кандасов'}?\n\n`
+             + 'Записи с совпадающим ИИН будут обновлены, новые — добавлены.\n'
+             + 'Координаты, проставленные вручную, не изменятся.')) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Загружаю…'; }
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('kind', kandasView);
+    const token = localStorage.getItem('geo_token');
+    const res = await fetch('/api/kandas/import', {
+      method: 'POST',
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+      credentials: 'include',
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Не получилось загрузить:\n\n' + (data.detail || `HTTP ${res.status}`));
+      return;
+    }
+    let msg = `Готово: добавлено ${data.inserted}, обновлено ${data.updated}.`;
+    if (data.skipped_groups) {
+      msg += `\n\nПропущено групп без главного заявителя: ${data.skipped_groups}.`
+           + '\nВ таких строках APPLICANT=1 нет — это неполнота выгрузки, не ошибка загрузки.';
+    }
+    alert(msg);
+    await loadKandasLayer();             // перерисовать точки на карте
+    if (document.getElementById('kandas-modal')?.style.display === 'flex') {
+      openKandasModal();                 // список открыт — обновить и его
+    }
+  } catch (e) {
+    console.error('kandas import:', e);
+    alert('Ошибка сети при загрузке файла.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
 }
 
 async function loadKandasLayer() {

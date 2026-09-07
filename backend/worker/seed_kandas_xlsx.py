@@ -373,7 +373,12 @@ async def main():
             iin = data["iin"]
             existing = None
             if iin:
-                res = await db.execute(select(Kandas).where(Kandas.iin == iin))
+                # ВАЖНО: только kind='kandas'. Без этого выгрузка кандасов
+                # затирала бы запись резидента с тем же ИИН (kind остаётся
+                # 'pmz', а данные подменяются) — pmz-сидер такой фильтр имеет.
+                res = await db.execute(
+                    select(Kandas).where(Kandas.iin == iin, Kandas.kind == "kandas")
+                )
                 existing = res.scalar_one_or_none()
             if existing:
                 for k, v in data.items():
