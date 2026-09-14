@@ -35,6 +35,18 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   background:#fff; border:1px solid #dbeafe; border-radius:16px;
   padding:40px 48px; width:360px; box-shadow:0 25px 60px rgba(30,58,138,.35);
 }
+/* Вуаль перехода между разделами — прикрывает перезагрузку страницы. */
+#switch-veil {
+  position:fixed; inset:0; z-index:100000; display:none; opacity:0;
+  transition:opacity .32s ease;
+  background:#f8fafc;
+  flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  color:#475569; font-size:14px; font-weight:600; letter-spacing:.02em;
+}
+.switch-spinner {
+  width:24px; height:24px; border:2.5px solid #dbeafe; border-top-color:#2563eb;
+  border-radius:50%; animation:auth-spin .7s linear infinite;
+}
 /* Переход после входа: оверлей «наезжает» и растворяется — эффект нырка в карту. */
 #auth-overlay { transition:opacity .6s ease, transform .6s cubic-bezier(.45,0,.2,1); }
 #auth-overlay.auth-dive { opacity:0; transform:scale(1.28); pointer-events:none; }
@@ -496,9 +508,93 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 @media (prefers-reduced-motion: reduce) {
   .cossu-fill { transition:none; }
 }
+
+/* ═══ Микроанимации интерфейса ═══════════════════════════════════════════════
+   Открытие/закрытие модалок, сворачивание секций сайдбара, выбор подложки,
+   отклик кнопок и чекбоксов. Только внешний слой — логика не затрагивается.
+   Появление сделано keyframes: анимация сама перезапускается, когда элемент
+   снова показывают, поэтому оно работает и там, где display меняют напрямую.
+   Закрытие требует JS (см. openModal/closeModal, toggleSection). */
+
+@keyframes ui-fade-in   { from { opacity:0; } to { opacity:1; } }
+@keyframes modal-fade-out { from { opacity:1; } to { opacity:0; } }
+@keyframes modal-pop-in  { from { opacity:0; transform:translateY(14px) scale(.975); }
+                           to   { opacity:1; transform:none; } }
+@keyframes modal-pop-out { from { opacity:1; transform:none; }
+                           to   { opacity:0; transform:translateY(8px) scale(.985); } }
+@keyframes ctrl-in       { from { opacity:0; transform:translateY(-5px); }
+                           to   { opacity:1; transform:none; } }
+@keyframes chk-pop       { 0% { transform:scale(.75); } 55% { transform:scale(1.15); }
+                           100% { transform:scale(1); } }
+
+/* Модалки */
+.modal-overlay { animation:ui-fade-in .2s ease-out; }
+.modal-box     { animation:modal-pop-in .26s cubic-bezier(.34,0,.2,1); }
+.modal-overlay.closing           { animation:modal-fade-out .2s ease forwards; }
+.modal-overlay.closing .modal-box { animation:modal-pop-out .2s ease forwards; }
+
+/* Секции сайдбара: сворачиваются по высоте вместо мгновенного display:none */
+.s-body { overflow:hidden;
+  transition:max-height .28s cubic-bezier(.4,0,.2,1), opacity .2s ease,
+             padding-top .28s ease, padding-bottom .28s ease; }
+.s-body.hidden { display:block; max-height:0; opacity:0;
+  padding-top:0; padding-bottom:0; }
+.s-head { transition:background .18s ease, color .18s ease; }
+.s-head span[id$="-arr"] { display:inline-block; transition:transform .28s cubic-bezier(.4,0,.2,1); }
+
+/* Кнопки */
+.action-btn { transition:background .18s ease, border-color .18s ease,
+              color .18s ease, transform .12s ease, box-shadow .18s ease; }
+.action-btn:hover  { border-color:#cbd5e1; box-shadow:0 1px 4px rgba(15,23,42,.07); }
+.action-btn:active { transform:scale(.985); }
+#section-lens .sec-btn { transition:background .18s ease, color .18s ease, transform .12s ease; }
+#section-lens .sec-btn:active { transform:scale(.95); }
+.modal-header button { transition:color .15s ease, transform .12s ease; }
+.modal-header button:active { transform:scale(.88); }
+
+/* Чекбоксы и строки категорий */
+.cat-item { border-radius:5px; transition:background .15s ease, color .15s ease; }
+.cat-item:hover { background:#f8fafc; color:#0f172a; }
+input[type=checkbox] { transition:transform .12s ease; }
+input[type=checkbox]:active  { transform:scale(.85); }
+input[type=checkbox]:checked { animation:chk-pop .22s ease-out; }
+
+/* Выбор подложки */
+.leaflet-control-layers-expanded { animation:ctrl-in .18s ease-out; }
+.leaflet-control-layers label { border-radius:4px; padding:1px 3px;
+                                transition:background .15s ease; }
+.leaflet-control-layers label:hover { background:#f1f5f9; }
+
+/* Панели и поля ввода */
+#stats-panel, #sel-panel, #map-pick-hint { animation:ui-fade-in .25s ease-out; }
+select, input[type=text], input[type=password], input[type=number] {
+  transition:border-color .15s ease, box-shadow .15s ease; }
+.modal-controls input:focus, .modal-controls select:focus {
+  box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+select:hover { border-color:#cbd5e1 !important; }
+select:focus { border-color:#2563eb !important; outline:none;
+               box-shadow:0 0 0 3px rgba(37,99,235,.12); }
 </style>
 </head>
 <body>
+
+<!-- Вуаль перехода между разделами -->
+<div id="switch-veil">
+  <div class="switch-spinner"></div>
+  <span id="switch-veil-label"></span>
+</div>
+<script>
+// Страница открыта переключением раздела — поднимаем вуаль сразу, до отрисовки
+// приложения, иначе перезагрузка мигнёт. Снимается в hideSwitchVeil().
+try {
+  var _sw = sessionStorage.getItem("geo_switch");
+  if (_sw) {
+    var _v = document.getElementById("switch-veil");
+    _v.style.display = "flex"; _v.style.opacity = "1";
+    document.getElementById("switch-veil-label").textContent = _sw;
+  }
+} catch (e) {}
+</script>
 
 <!-- Экран авторизации -->
 <div id="auth-overlay">
@@ -1398,6 +1494,7 @@ async function checkAuth() {
     if (r.ok) { currentUser = await r.json(); startApp(); return; }
   } catch {}
   startAuthFlight();   // сессии нет — показываем экран входа с полётом над картой
+  hideSwitchVeil();
 }
 
 // Выход — обратный переход: экран входа «выныривает» из карты (то же
@@ -1450,10 +1547,20 @@ function resolveSection() {
   return avail.includes('population') ? 'population' : avail[0];
 }
 
+// Переключение раздела = перезагрузка страницы. Чтобы она не била по глазам,
+// уходим в вуаль до reload, а после загрузки проявляемся обратно (hideSwitchVeil).
 function switchSection(sec) {
   if (sec === currentSection) return;
   localStorage.setItem('geo_section', sec);
-  location.reload();
+  const v = document.getElementById('switch-veil');
+  if (!v) { location.reload(); return; }
+  const label = SECTION_LABELS[sec] || sec;
+  try { sessionStorage.setItem('geo_switch', label); } catch (e) {}
+  document.getElementById('switch-veil-label').textContent = label;
+  v.style.display = 'flex';
+  void v.offsetWidth;              // reflow, иначе перехода не будет
+  v.style.opacity = '1';
+  setTimeout(() => location.reload(), 340);
 }
 
 // Раздел определяет режим (раньше это делала роль). kandas и residents — один
@@ -1481,26 +1588,13 @@ function renderSectionLens() {
 // Оверлей не гасится мгновенно: кнопка превращается в индикатор, приложение
 // успевает построить карту и подтянуть тайлы, и только потом экран входа
 // наезжает и растворяется. Потолок ожидания — 3 с, чтобы не залипнуть.
-function finishAuthDive() {
-  const ov = document.getElementById('auth-overlay');
-  if (!ov || ov.dataset.diving) return;
-  ov.dataset.diving = '1';
-
-  const t0 = Date.now();
+// Готовность приложения: карта создана и базовый слой дорисовал видимые тайлы.
+// capMs — потолок ожидания, чтобы переход не залипал при проблемах с сетью.
+function _whenAppReady(cb, capMs) {
   let fired = false;
-  const dive = () => {
-    if (fired) return;
-    fired = true;
-    // держим индикатор хотя бы полсекунды, иначе он просто мигнёт
-    setTimeout(() => {
-      ov.classList.add('auth-dive');
-      setTimeout(() => { ov.style.display = 'none'; stopAuthFlight(); }, 700);
-    }, Math.max(0, 500 - (Date.now() - t0)));
-  };
-
-  const cap  = setTimeout(dive, 3000);
-  const done = () => { clearTimeout(cap); dive(); };
-
+  let capTimer = null;
+  const done = () => { if (fired) return; fired = true; clearTimeout(capTimer); cb(); };
+  capTimer = setTimeout(done, capMs || 3000);
   if (!map) { done(); return; }
   map.whenReady(() => {
     let hooked = false;
@@ -1509,6 +1603,31 @@ function finishAuthDive() {
     });
     if (!hooked) done();
   });
+}
+
+function finishAuthDive() {
+  const ov = document.getElementById('auth-overlay');
+  if (!ov || ov.dataset.diving) return;
+  ov.dataset.diving = '1';
+  const t0 = Date.now();
+  _whenAppReady(() => {
+    // держим индикатор хотя бы полсекунды, иначе он просто мигнёт
+    setTimeout(() => {
+      ov.classList.add('auth-dive');
+      setTimeout(() => { ov.style.display = 'none'; stopAuthFlight(); }, 700);
+    }, Math.max(0, 500 - (Date.now() - t0)));
+  }, 3000);
+}
+
+// Снять вуаль перехода между разделами — когда карта нового раздела готова.
+function hideSwitchVeil() {
+  const v = document.getElementById('switch-veil');
+  try { sessionStorage.removeItem('geo_switch'); } catch (e) {}
+  if (!v || v.style.display !== 'flex') return;
+  _whenAppReady(() => {
+    v.style.opacity = '0';
+    setTimeout(() => { v.style.display = 'none'; }, 350);
+  }, 3000);
 }
 
 function startApp(opts) {
@@ -1523,6 +1642,7 @@ function startApp(opts) {
     stopAuthFlight();                   // фоновая карта входа больше не нужна
   }
   currentSection = resolveSection();   // определяем активный раздел ДО веток ниже
+  normalizeSectionArrows();
   renderSectionLens();
   const label = currentUser.fio ? currentUser.fio : currentUser.login;
   document.getElementById('user-label').textContent = label + ' ✕';
@@ -1614,7 +1734,7 @@ function startApp(opts) {
   }
 
   initMap();
-  if (diveIn) finishAuthDive();
+  if (diveIn) finishAuthDive(); else hideSwitchVeil();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2672,12 +2792,67 @@ function buildPopup(p) {
 // ═══════════════════════════════════════════════════════
 //  Переключение секций сайдбара
 // ═══════════════════════════════════════════════════════
+// ── Модалки с анимацией ──────────────────────────────────────────────────────
+// Появление рисуют keyframes в CSS, а закрытие нужно придержать: сначала класс
+// closing (затухание), и только через 200 мс display:none. Работает и для
+// модалок на классе open, и для тех, что переключают display напрямую.
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  clearTimeout(m._closeTimer);
+  m.classList.remove('closing');
+  m.classList.add('open');
+  m.style.display = 'flex';
+}
+
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  clearTimeout(m._closeTimer);
+  m.classList.add('closing');
+  m._closeTimer = setTimeout(() => {
+    m.classList.remove('closing');
+    m.classList.remove('open');
+    m.style.display = 'none';
+  }, 200);
+}
+
+// Стрелки секций: единый глиф + поворот, чтобы смена состояния была плавной.
+function normalizeSectionArrows() {
+  document.querySelectorAll('.s-head span[id$="-arr"]').forEach(a => {
+    const body = document.getElementById(a.id.replace(/-arr$/, '') + '-body');
+    a.innerHTML = '&#9660;';
+    a.style.transform = (body && body.classList.contains('hidden')) ? 'rotate(180deg)' : '';
+  });
+}
+
+// Сворачивание секции анимируется по max-height: значение берётся из реальной
+// высоты содержимого, иначе переход с auto браузер не покажет. После открытия
+// ограничение снимается, чтобы содержимое могло дорасти (списки догружаются).
 function toggleSection(id) {
   const body = document.getElementById(id + '-body');
   const arr  = document.getElementById(id + '-arr');
   if (!body) return;
-  body.classList.toggle('hidden');
-  if (arr) arr.innerHTML = body.classList.contains('hidden') ? '&#9650;' : '&#9660;';
+  const opening = body.classList.contains('hidden');
+
+  clearTimeout(body._secTimer);
+  if (opening) {
+    body.classList.remove('hidden');
+    const h = body.scrollHeight;
+    body.style.maxHeight = '0px';
+    void body.offsetHeight;                     // reflow
+    body.style.maxHeight = h + 'px';
+    body._secTimer = setTimeout(() => {
+      if (!body.classList.contains('hidden')) body.style.maxHeight = '';
+    }, 300);
+  } else {
+    body.style.maxHeight = body.scrollHeight + 'px';
+    void body.offsetHeight;
+    body.classList.add('hidden');
+    body.style.maxHeight = '';                  // дальше сработает правило .hidden
+  }
+
+  if (arr) arr.style.transform = opening ? '' : 'rotate(180deg)';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3372,7 +3547,7 @@ function toggleKandasLens(on) {
 // ── Модальное окно Кандасы ────────────────────────────────────────────────────
 
 async function openKandasModal() {
-  document.getElementById('kandas-modal').style.display = 'flex';
+  openModal('kandas-modal');
   const title = document.getElementById('kandas-modal-title');
   if (title) title.textContent = _isPmzView() ? 'Реестр постоянных резидентов' : 'Реестр кандасов';
   const token = localStorage.getItem('geo_token');
@@ -3385,7 +3560,7 @@ async function openKandasModal() {
 }
 
 function closeKandasModal() {
-  document.getElementById('kandas-modal').style.display = 'none';
+  closeModal('kandas-modal');
 }
 
 function renderKandasList() {
@@ -4082,7 +4257,7 @@ function cossuStatsAllRegions() {
 }
 
 async function openCossuModal() {
-  document.getElementById('cossu-modal').style.display = 'flex';
+  openModal('cossu-modal');
   try {
     const r = await fetch('/api/cossu', { credentials: 'include' });
     if (!r.ok) {
@@ -4100,7 +4275,7 @@ async function openCossuModal() {
 }
 
 function closeCossuModal() {
-  document.getElementById('cossu-modal').style.display = 'none';
+  closeModal('cossu-modal');
 }
 
 // ── Статистика ЦОССУ по областям и типам ────────────────────────────────────
@@ -4127,7 +4302,7 @@ function _buildCossuStats() {
 let cossuStatsTab = 'regions';
 
 function openCossuStats() {
-  document.getElementById('cossu-stats-modal').style.display = 'flex';
+  openModal('cossu-stats-modal');
   _fillCossuStatsRegions();
   switchCossuStatsTab(cossuStatsTab);
 }
@@ -4158,7 +4333,7 @@ function switchCossuStatsTab(tab) {
 }
 
 function closeCossuStats() {
-  document.getElementById('cossu-stats-modal').style.display = 'none';
+  closeModal('cossu-stats-modal');
 }
 
 // Рендер одной карточки статистики (область или РК). isPinned — выделенная РК-шапка.
@@ -5006,7 +5181,7 @@ let listRegions = [];  // [{city, rainames:[...]}]
 
 function openListModal() {
   listOffset = 0;
-  document.getElementById('list-modal').classList.add('open');
+  openModal('list-modal');
   loadListRegions();
   listLoad();
 }
@@ -5053,7 +5228,7 @@ function rebuildRainameDropdown(city) {
   }
 }
 function closeListModal() {
-  document.getElementById('list-modal').classList.remove('open');
+  closeModal('list-modal');
   document.getElementById('list-city').value    = '';
   document.getElementById('list-rainame').value = '';
   rebuildRainameDropdown('');
@@ -5132,7 +5307,7 @@ function openCoordModal(id, title) {
   document.getElementById('coord-title').textContent = 'Координаты: ' + title;
   document.getElementById('coord-latlon').value = '';
   document.getElementById('coord-reason').value = '';
-  document.getElementById('coord-modal').classList.add('open');
+  openModal('coord-modal');
 }
 function openCoordFromMap(id) {
   const p = allPlaces.find(x => x.id === id);
@@ -5144,12 +5319,12 @@ function openCoordFromMap(id) {
   }
 }
 function closeCoordModal() {
-  document.getElementById('coord-modal').classList.remove('open');
+  closeModal('coord-modal');
   stopMapPick();
   editingId = null;
 }
 function startMapPick() {
-  document.getElementById('coord-modal').classList.remove('open');
+  closeModal('coord-modal');
   document.getElementById('map-pick-hint').style.display = 'block';
   pickingCoord = true;
   map.getContainer().style.cursor = 'crosshair';
@@ -5158,7 +5333,7 @@ function startMapPick() {
 function onMapPick(e) {
   document.getElementById('coord-latlon').value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
   stopMapPick();
-  document.getElementById('coord-modal').classList.add('open');
+  openModal('coord-modal');
 }
 function stopMapPick() {
   pickingCoord = false;
@@ -5202,11 +5377,11 @@ async function saveCoords() {
 //  Импорт xlsx
 // ═══════════════════════════════════════════════════════
 function openImportModal() {
-  document.getElementById('import-modal').classList.add('open');
+  openModal('import-modal');
   document.getElementById('import-status').textContent = '';
 }
 function closeImportModal() {
-  document.getElementById('import-modal').classList.remove('open');
+  closeModal('import-modal');
 }
 async function doImport() {
   const fi  = document.getElementById('import-file');
@@ -5292,13 +5467,13 @@ if (new URLSearchParams(location.search).get('mode') === 'cossu-public') {
 //  Управление пользователями (admin)
 // ═══════════════════════════════════════════════════════
 async function openUsersModal() {
-  document.getElementById('users-modal').classList.add('open');
+  openModal('users-modal');
   document.getElementById('nu-status').textContent = '';
   await refreshUsersList();
 }
 
 function closeUsersModal() {
-  document.getElementById('users-modal').classList.remove('open');
+  closeModal('users-modal');
 }
 
 async function refreshUsersList() {
