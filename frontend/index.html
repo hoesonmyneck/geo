@@ -1400,9 +1400,27 @@ async function checkAuth() {
   startAuthFlight();   // сессии нет — показываем экран входа с полётом над картой
 }
 
+// Выход — обратный переход: экран входа «выныривает» из карты (то же
+// состояние auth-dive, только в обратную сторону), и лишь потом перезагрузка.
+// Фоновая карта поднимается заново — тайлы уже в кеше браузера, так что
+// появляется мгновенно.
 async function doLogout() {
-  await fetch(`${API}/api/auth/logout`, {method:'POST', credentials:'include'});
-  location.reload();
+  const t0 = Date.now();
+  const ov = document.getElementById('auth-overlay');
+  if (ov) {
+    delete ov.dataset.diving;
+    ov.classList.add('auth-dive');        // стартовое состояние — «внутри карты»
+    ov.style.display = 'flex';
+    const btn = document.getElementById('auth-btn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Войти'; }
+    startAuthFlight();
+    void ov.offsetWidth;                  // reflow, иначе браузер склеит два состояния
+    ov.classList.remove('auth-dive');     // → плавный выход на экран входа
+  }
+  try {
+    await fetch(`${API}/api/auth/logout`, {method:'POST', credentials:'include'});
+  } catch {}
+  setTimeout(() => location.reload(), Math.max(0, 700 - (Date.now() - t0)));
 }
 
 // ═══════════════════════════════════════════════════════
