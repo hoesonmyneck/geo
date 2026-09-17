@@ -20,10 +20,14 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
 }
 /* Фон — «полёт» над картой: слой Leaflet + синий тинт с виньеткой. */
 #auth-map {
-  position:absolute; inset:0; z-index:0; background:#0b1220;
+  position:absolute; inset:0; z-index:0; background:transparent;
   pointer-events:none; filter:saturate(1.15) contrast(1.05);
+  animation:ui-fade-in .6s ease-out;
 }
-#auth-map .leaflet-container { background:#0b1220; }
+/* Контейнер прозрачный намеренно: пока тайлы не отрисовались, видно синий
+   градиент оверлея, а не тёмную заливку — иначе при выходе из аккаунта фон
+   на мгновение чернел. */
+#auth-map .leaflet-container { background:transparent; }
 #auth-map-tint {
   position:absolute; inset:0; z-index:1; pointer-events:none;
   background:
@@ -1605,7 +1609,7 @@ async function runEdsSecondFactor(challenge) {
 // Под формой входа крутится некликабельная тёмная карта: цепочка flyTo по
 // городам даёт эффект облёта — отдаление, перелёт, снижение. Карта создаётся
 // только если сессии нет (см. checkAuth) и убивается в startApp().
-let _authMap = null, _authFlightTimer = null;
+let _authMap = null, _authTiles = null, _authFlightTimer = null, _authIdx = 0;
 
 // Замкнутый маршрут над левым берегом Астаны. Зум постоянный, перелётов между
 // городами нет — за круг подгружается небольшой набор тайлов, дальше они уже в
@@ -1624,39 +1628,52 @@ const AUTH_ROUTE = [
   [51.1300, 71.4520],   // разворот на север
 ];
 
+// Один этап маршрута. Вынесен из startAuthFlight, чтобы дрейф можно было
+// возобновить на уже построенной карте, не создавая её заново.
+function _authLeg() {
+  if (!_authMap) return;
+  const from = _authMap.getCenter();
+  _authIdx = (_authIdx + 1) % AUTH_ROUTE.length;
+  const to = AUTH_ROUTE[_authIdx];
+  // Длительность от расстояния => скорость постоянная, этапы стыкуются без рывка.
+  const sec = Math.max(8, _authMap.distance(from, to) / AUTH_SPEED);
+  _authMap.panTo(to, {animate: true, duration: sec, easeLinearity: 1, noMoveStart: true});
+  _authFlightTimer = setTimeout(_authLeg, sec * 1000);
+}
+
 function startAuthFlight() {
-  if (_authMap || typeof L === 'undefined') return;
+  if (typeof L === 'undefined') return;
   const host = document.getElementById('auth-map');
   if (!host) return;
 
-  let i = Math.floor(Math.random() * AUTH_ROUTE.length);
+  // Карта уже построена (вернулись на экран входа) — просто оживляем дрейф.
+  // Ничего не перерисовывается: тайлы на месте, фон появляется сразу.
+  if (_authMap) {
+    _authMap.invalidateSize(false);          // вдруг окно меняли, пока карта была скрыта
+    if (!_authFlightTimer) _authFlightTimer = setTimeout(_authLeg, 500);
+    return;
+  }
 
+  _authIdx = Math.floor(Math.random() * AUTH_ROUTE.length);
   _authMap = L.map(host, {
-    center: AUTH_ROUTE[i], zoom: AUTH_ZOOM,
+    center: AUTH_ROUTE[_authIdx], zoom: AUTH_ZOOM,
     zoomControl: false, attributionControl: false,
     dragging: false, boxZoom: false, doubleClickZoom: false,
     scrollWheelZoom: false, touchZoom: false, keyboard: false, inertia: false,
   });
   // Esri World Imagery — без ключа (CARTO свои тайлы закрыла: «API key required»).
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-              {maxZoom: 18, keepBuffer: 8}).addTo(_authMap);
-
-  const leg = () => {
-    if (!_authMap) return;
-    const from = _authMap.getCenter();
-    i = (i + 1) % AUTH_ROUTE.length;
-    const to = AUTH_ROUTE[i];
-    // Длительность от расстояния => скорость постоянная, этапы стыкуются без рывка.
-    const sec = Math.max(8, _authMap.distance(from, to) / AUTH_SPEED);
-    _authMap.panTo(to, {animate: true, duration: sec, easeLinearity: 1, noMoveStart: true});
-    _authFlightTimer = setTimeout(leg, sec * 1000);
-  };
-  _authFlightTimer = setTimeout(leg, 900);
+  _authTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                           {maxZoom: 18, keepBuffer: 8}).addTo(_authMap);
+  _authFlightTimer = setTimeout(_authLeg, 900);
 }
 
-function stopAuthFlight() {
+// По умолчанию карта не уничтожается, а замирает: при возврате на экран входа
+// она уже отрисована и фон не моргает. Уничтожение — только по явному запросу.
+function stopAuthFlight(opts) {
   if (_authFlightTimer) { clearTimeout(_authFlightTimer); _authFlightTimer = null; }
-  if (_authMap) { _authMap.remove(); _authMap = null; }
+  if (opts && opts.destroy && _authMap) {
+    _authMap.remove(); _authMap = null; _authTiles = null;
+  }
 }
 
 async function checkAuth() {
@@ -1672,23 +1689,57 @@ async function checkAuth() {
 // состояние auth-dive, только в обратную сторону), и лишь потом перезагрузка.
 // Фоновая карта поднимается заново — тайлы уже в кеше браузера, так что
 // появляется мгновенно.
+// Ждём, пока фоновая карта реально отрисована. Нужно на выходе из аккаунта:
+// если сессия была восстановлена при загрузке страницы, карту входа в этой
+// вкладке ещё ни разу не строили, и без ожидания оверлей всплыл бы поверх
+// пустого контейнера — тот самый синий кадр.
+function _authMapPainted(capMs) {
+  return new Promise(resolve => {
+    if (!_authTiles) { resolve(); return; }
+    let done = false;
+    const fin = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(cap);
+      // два кадра — чтобы тайлы успели попасть на экран, а не только в DOM
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    };
+    const cap = setTimeout(fin, capMs || 900);
+    if (!_authTiles.isLoading()) { fin(); return; }   // всё уже на месте
+    _authTiles.once('load', fin);
+  });
+}
+
 async function doLogout() {
-  const t0 = Date.now();
   const ov = document.getElementById('auth-overlay');
+  // Запрос уходит сразу, параллельно с анимацией.
+  const logoutReq = fetch(`${API}/api/auth/logout`, {method:'POST', credentials:'include'})
+                      .catch(() => {});
   if (ov) {
     delete ov.dataset.diving;
     ov.classList.add('auth-dive');        // стартовое состояние — «внутри карты»
     ov.style.display = 'flex';
     const btn = document.getElementById('auth-btn');
     if (btn) { btn.disabled = false; btn.textContent = 'Войти'; }
+    // Логотип с загрузки страницы заморожен в конце анимации (fill="freeze").
+    // Показать его как есть — значит мигнуть готовой надписью, которую после
+    // перезагрузки начнут рисовать заново. Откатываем SMIL в нулевое время и
+    // ставим на паузу: логотип пуст, как в первый момент загрузки.
+    const logo = document.getElementById('auth-logo');
+    if (logo) {
+      try { logo.pauseAnimations(); logo.setCurrentTime(0); }
+      catch (e) { logo.style.opacity = '0'; }   // браузер без управления SMIL
+    }
+    // Контейнер уже имеет размер (display:flex), поэтому Leaflet может грузить
+    // тайлы, пока оверлей ещё прозрачный. Показываем его готовым.
     startAuthFlight();
+    await _authMapPainted(900);
     void ov.offsetWidth;                  // reflow, иначе браузер склеит два состояния
     ov.classList.remove('auth-dive');     // → плавный выход на экран входа
   }
-  try {
-    await fetch(`${API}/api/auth/logout`, {method:'POST', credentials:'include'});
-  } catch {}
-  setTimeout(() => location.reload(), Math.max(0, 700 - (Date.now() - t0)));
+  await logoutReq;
+  try { sessionStorage.setItem("geo_signed_out", "1"); } catch (e) {}
+  setTimeout(() => location.reload(), 750);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -5631,6 +5682,15 @@ if (new URLSearchParams(location.search).get('mode') === 'cossu-public') {
   currentUser = { role: 'viewer', sections: ['cossu'], login: 'public', fio: 'ЦОССУ — публичный просмотр' };
   startApp();
 } else {
+  // После выхода из аккаунта сессии заведомо нет — не ждём ответа
+  // /api/auth/me, а сразу поднимаем фоновую карту (повторный вызов
+  // из checkAuth безвреден, startAuthFlight идемпотентен).
+  try {
+    if (sessionStorage.getItem("geo_signed_out")) {
+      sessionStorage.removeItem("geo_signed_out");
+      startAuthFlight();
+    }
+  } catch (e) {}
   checkAuth();
 }
 
