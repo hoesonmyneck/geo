@@ -3526,7 +3526,15 @@ function updateKandasStats() {
     .join('<br>');
 
   const totalCount = kandasData.length;
-  const totalLine = `<span style="white-space:nowrap;color:#374151"><b>Всего:</b> ${totalCount}</span><br>`;
+  // Члены семьи приходят вложенным списком extra.family у главного кандаса
+  // (строки выгрузки с APPLICANT=0). Считаем самого кандаса + его семью.
+  const withFamily = kandasData.reduce((sum, k) => {
+    const fam = k.extra && Array.isArray(k.extra.family) ? k.extra.family.length : 0;
+    return sum + 1 + fam;
+  }, 0);
+  const totalLine = `<span style="white-space:nowrap;color:#374151"><b>Всего:</b> ${totalCount}</span><br>` +
+    (_isPmzView() ? '' :
+      `<span style="white-space:nowrap;color:#374151"><b>Включая членов семьи:</b> ${withFamily}</span><br>`);
   const unknownLine = unknownCount > 0
     ? `<span style="white-space:nowrap;color:#ef4444"><b>Республика Казахстан:</b> ${unknownCount}</span><br>`
     : '';
