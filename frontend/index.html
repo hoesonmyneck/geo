@@ -342,6 +342,24 @@ html,body { width:100%; height:100%; font-family:-apple-system,BlinkMacSystemFon
   border-radius:6px; color:#374151; font-size:13px; outline:none;
 }
 .coord-box input:focus, .coord-box textarea:focus { border-color:#3b82f6; }
+
+/* Переключатель режима (две карточки вместо радиокнопок): в .coord-box у label
+   и input свои правила — uppercase, block, width:100% — поэтому режим набран
+   на кнопках, они этих стилей не наследуют. */
+.mode-card {
+  flex:1; min-width:0; text-align:left; cursor:pointer; font:inherit;
+  background:#fff; border:1.5px solid #e2e8f0; border-radius:10px;
+  padding:11px 13px; display:flex; flex-direction:column; gap:3px;
+  transition:border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.mode-card:hover { border-color:#cbd5e1; }
+.mode-card.is-active { border-color:#2563eb; background:#eff6ff;
+                       box-shadow:0 0 0 3px rgba(37,99,235,.10); }
+.mode-card .mode-title { font-size:13px; font-weight:600; color:#334155;
+                         text-transform:none; letter-spacing:0; }
+.mode-card.is-active .mode-title { color:#1d4ed8; }
+.mode-card .mode-sub { font-size:11px; line-height:1.45; color:#94a3b8;
+                       text-transform:none; letter-spacing:0; }
 .coord-box .btn-row { display:flex; gap:8px; margin-top:20px; }
 .coord-box .btn-row button { flex:1; padding:9px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; border:1px solid #e2e8f0; }
 .coord-box .btn-row .btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
@@ -913,6 +931,7 @@ try {
     </div>
     <div id="admin-tools" style="display:none;margin-top:4px">
       <button class="action-btn" onclick="openUsersModal()" style="width:100%">Управление пользователями</button>
+      <button class="action-btn" onclick="openDataModal()" style="width:100%">Управление данными</button>
     </div>
   </div>
 
@@ -1185,6 +1204,93 @@ try {
 </div>
 
 <!-- ── Модальное окно: управление пользователями (для admin) ── -->
+<!-- Управление данными (admin): обновление ЦОССУ из корпоративной базы -->
+<div class="modal-overlay" id="data-modal">
+  <div class="coord-box" style="width:720px;max-width:96vw;max-height:86vh;padding:0;display:flex;flex-direction:column;overflow:hidden">
+    <div style="flex-shrink:0;background:#fff;padding:16px 24px 12px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">Управление данными</h3>
+      <button onclick="closeDataModal()" title="Закрыть"
+        style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#64748b;padding:0">&times;</button>
+    </div>
+
+    <div style="padding:20px 24px 24px;overflow-y:auto">
+      <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+          <div>
+            <div style="font-size:15px;font-weight:700;color:#0f172a">ЦОССУ</div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px">
+              Выгрузка из корпоративной базы и обновление карты
+            </div>
+          </div>
+          <button class="action-btn primary" id="btn-cossu-refresh"
+                  onclick="startCossuRefresh()"
+                  style="width:auto;flex-shrink:0;text-align:center;padding:9px 18px">
+            Обновить ЦОССУ
+          </button>
+        </div>
+
+        <!-- Текущее состояние: заполняется при открытии окна -->
+        <div id="data-cossu-state" style="margin-top:14px;font-size:13px;color:#475569">
+          <span style="color:#94a3b8">Загружаю состояние…</span>
+        </div>
+
+        <!-- Режим завершения: с геокодированием новых адресов или без него -->
+        <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:8px">
+            Геокодирование новых адресов
+          </div>
+          <div style="display:flex;gap:10px">
+            <button type="button" class="mode-card is-active" id="geo-mode-off"
+                    onclick="setGeoMode('off', true)">
+              <span class="mode-title">Без геокодирования</span>
+              <span class="mode-sub">Новые точки останутся без координат</span>
+            </button>
+            <button type="button" class="mode-card" id="geo-mode-on"
+                    onclick="setGeoMode('on', true)">
+              <span class="mode-title">С геокодированием</span>
+              <span class="mode-sub">Адреса новых точек пробиваются через 2ГИС</span>
+            </button>
+          </div>
+
+          <div id="data-key-box" style="display:none;margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px">
+            <div id="data-key-current" style="font-size:12px;color:#475569;margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="data-key-input" placeholder="Вставьте новый ключ 2ГИС"
+                     autocomplete="off" spellcheck="false"
+                     style="flex:1;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:monospace">
+              <button class="action-btn" onclick="saveTwogisKey()"
+                      style="width:auto;flex-shrink:0;text-align:center;padding:7px 14px">Сохранить</button>
+            </div>
+            <div id="data-key-status" style="font-size:12px;margin-top:7px;min-height:16px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Прогресс: показывается во время выполнения и остаётся после -->
+      <div id="data-progress" style="display:none;margin-top:18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span id="data-progress-label" style="font-size:13px;font-weight:600;color:#0f172a"></span>
+          <span id="data-progress-pct" style="font-size:12px;color:#64748b;font-variant-numeric:tabular-nums"></span>
+        </div>
+        <div style="height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden">
+          <div id="data-progress-bar"
+               style="height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .4s ease"></div>
+        </div>
+        <div id="data-steps" style="margin-top:14px;font-size:13px;line-height:1.9"></div>
+      </div>
+
+      <!-- Итоговый отчёт -->
+      <div id="data-report" style="display:none;margin-top:18px"></div>
+
+      <details id="data-log-wrap" style="display:none;margin-top:14px">
+        <summary style="cursor:pointer;font-size:12px;color:#64748b">Подробный лог</summary>
+        <pre id="data-log"
+             style="margin-top:8px;background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;font-size:11px;line-height:1.6;max-height:260px;overflow:auto;white-space:pre-wrap"></pre>
+      </details>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="users-modal">
   <div class="coord-box" style="width:1000px;max-width:96vw;max-height:80vh;padding:0;display:flex;flex-direction:column;overflow:hidden">
     <!-- Фиксированный заголовок с крестиком — тело прокручивается отдельно -->
@@ -5893,6 +5999,301 @@ async function toggleUserActive(id, isActive) {
     else alert('Ошибка');
   } catch { alert('Ошибка сети'); }
 }
+
+// ═══════════════════════════════════════════════════════
+//  Управление данными (admin): обновление ЦОССУ из базы
+// ═══════════════════════════════════════════════════════
+// Пайплайн идёт десятки секунд, а с геокодированием — минуты, поэтому бэкенд
+// запускает его фоновой задачей, а мы опрашиваем состояние раз в секунду.
+let _dataPollTimer = null;
+let _dataKeyState = null;      // последнее состояние с сервера (ключ, счётчики)
+let _dataModeTouched = false;  // пользователь сам выбрал режим — не переключаем
+
+// Режим завершения: с геокодированием или без. Поле ключа показывается только
+// во втором случае, ключ хранится на сервере и правится отсюда же.
+let _dataGeoMode = 'off';
+
+function setGeoMode(mode, byUser) {
+  _dataGeoMode = mode === 'on' ? 'on' : 'off';
+  if (byUser) _dataModeTouched = true;
+  const off = document.getElementById('geo-mode-off');
+  const on  = document.getElementById('geo-mode-on');
+  if (off) off.classList.toggle('is-active', _dataGeoMode === 'off');
+  if (on)  on.classList.toggle('is-active', _dataGeoMode === 'on');
+  const box = document.getElementById('data-key-box');
+  if (box) box.style.display = _dataGeoMode === 'on' ? 'block' : 'none';
+}
+
+function _geoModeOn() {
+  return _dataGeoMode === 'on';
+}
+
+function renderTwogisKey(s) {
+  const box = document.getElementById('data-key-current');
+  if (!box) return;
+  if (s.has_2gis_key) {
+    box.innerHTML = `Текущий ключ: <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px">${s.twogis_key_masked}</code>` +
+      (s.twogis_key_from_env
+        ? `<span style="color:#94a3b8"> — из настроек сервера</span>`
+        : ` <a href="#" onclick="clearTwogisKey();return false" style="color:#dc2626;text-decoration:none;margin-left:6px">удалить</a>`);
+  } else {
+    box.innerHTML = `<span style="color:#b45309">Ключ не задан — без него геокодирование не запустится</span>`;
+  }
+}
+
+async function saveTwogisKey() {
+  const input = document.getElementById('data-key-input');
+  const status = document.getElementById('data-key-status');
+  const key = (input.value || '').trim();
+  if (!key) { status.innerHTML = '<span style="color:#dc2626">Вставьте ключ</span>'; return; }
+  status.innerHTML = '<span style="color:#94a3b8">Сохраняю…</span>';
+  try {
+    const r = await fetch(`${API}/api/admin/data/settings/twogis-key`, {
+      method: 'PUT', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    input.value = '';
+    status.innerHTML = '<span style="color:#059669">Ключ сохранён</span>';
+    await loadDataState();
+  } catch (e) {
+    status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`;
+  }
+}
+
+async function clearTwogisKey() {
+  if (!confirm('Удалить сохранённый ключ 2ГИС?')) return;
+  const status = document.getElementById('data-key-status');
+  try {
+    const r = await fetch(`${API}/api/admin/data/settings/twogis-key`, {
+      method: 'PUT', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: null}),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    status.innerHTML = '<span style="color:#64748b">Ключ удалён</span>';
+    await loadDataState();
+  } catch (e) {
+    status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`;
+  }
+}
+
+const DATA_STEP_ICON = {
+  pending: '<span style="color:#cbd5e1">○</span>',
+  running: '<span style="color:#2563eb">◐</span>',
+  done:    '<span style="color:#059669">✓</span>',
+  skipped: '<span style="color:#94a3b8">—</span>',
+  error:   '<span style="color:#dc2626">✕</span>',
+};
+
+async function openDataModal() {
+  openModal('data-modal');
+  document.getElementById('data-progress').style.display = 'none';
+  document.getElementById('data-report').style.display = 'none';
+  document.getElementById('data-log-wrap').style.display = 'none';
+  await loadDataState();
+}
+
+function closeDataModal() {
+  closeModal('data-modal');
+  // Опрос не останавливаем: задача живёт на сервере, при повторном открытии
+  // окна её состояние подтянется заново.
+}
+
+async function loadDataState() {
+  const box = document.getElementById('data-cossu-state');
+  try {
+    const r = await fetch(`${API}/api/admin/data/cossu/state`, {credentials: 'include'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const s = await r.json();
+    const c = s.counts || {};
+    const noCoords = c.no_coords || 0;
+
+    box.innerHTML =
+      `<div>В базе: <b>${_nf(c.rows || 0)}</b> отделений, <b>${_nf(c.orgs || 0)}</b> учреждений` +
+      (noCoords ? `, <span style="color:#dc2626">${_nf(noCoords)} без координат</span>` : '') +
+      `</div>` +
+      `<div style="margin-top:4px">Сервис выгрузки: ` +
+      (s.exporter_ok
+        ? `<span style="color:#059669">доступен</span>`
+        : `<span style="color:#dc2626">недоступен</span>` +
+          `<span style="color:#94a3b8"> — контейнер cossu-exporter не запущен</span>`) +
+      `</div>` +
+      (s.has_2gis_key ? '' :
+        `<div style="margin-top:4px;color:#b45309">Ключ 2ГИС не задан — геокодирование будет пропущено</div>`);
+
+    // Ключ есть — по умолчанию предлагаем геокодировать, иначе режим «без»
+    _dataKeyState = s;
+    if (!_dataModeTouched) _dataGeoMode = s.has_2gis_key ? 'on' : 'off';
+    renderTwogisKey(s);
+    setGeoMode(_dataGeoMode);
+    document.getElementById('btn-cossu-refresh').disabled = !s.exporter_ok;
+
+    // Если задача ещё идёт — сразу подхватываем её прогресс
+    if (s.last_job && s.last_job.status === 'running') {
+      renderDataJob(s.last_job);
+      pollDataJob(s.last_job.id);
+    } else if (s.last_job) {
+      renderDataJob(s.last_job);
+    }
+  } catch (e) {
+    box.innerHTML = `<span style="color:#dc2626">Не удалось получить состояние: ${e.message}</span>`;
+  }
+}
+
+async function startCossuRefresh() {
+  const geocode = _geoModeOn();
+  if (geocode && !(_dataKeyState && _dataKeyState.has_2gis_key)) {
+    alert('Выбрано геокодирование, но ключ 2ГИС не задан.\n' +
+          'Вставьте ключ и сохраните его, либо выберите режим без геокодирования.');
+    return;
+  }
+  if (!confirm('Обновить ЦОССУ из корпоративной базы?\n\n' +
+               (geocode ? 'Новые адреса будут геокодированы через 2ГИС.\n'
+                        : 'Геокодирование выполняться не будет — новые точки останутся без координат.\n') +
+               '\nЗаписи, которых нет в новой выгрузке, будут удалены. ' +
+               'Перед этим автоматически создаётся резервная копия таблицы.')) return;
+
+  const btn = document.getElementById('btn-cossu-refresh');
+  btn.disabled = true;
+  btn.textContent = 'Обновляю…';
+  document.getElementById('data-report').style.display = 'none';
+
+  try {
+    const r = await fetch(`${API}/api/admin/data/cossu/refresh`, {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({geocode}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    pollDataJob(data.job_id);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Обновить ЦОССУ';
+    alert('Не удалось запустить обновление: ' + e.message);
+  }
+}
+
+function pollDataJob(jobId) {
+  clearTimeout(_dataPollTimer);
+  const tick = async () => {
+    try {
+      const r = await fetch(`${API}/api/admin/data/jobs/${jobId}`, {credentials: 'include'});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const job = await r.json();
+      renderDataJob(job);
+      if (job.status === 'running') {
+        _dataPollTimer = setTimeout(tick, 1000);
+      } else {
+        const btn = document.getElementById('btn-cossu-refresh');
+        btn.disabled = false;
+        btn.textContent = 'Обновить ЦОССУ';
+        loadDataState();           // обновить «в базе: …»
+        if (job.status === 'done' && typeof loadCossuData === 'function') {
+          loadCossuData();        // подтянуть свежие точки на карту
+        }
+      }
+    } catch (e) {
+      _dataPollTimer = setTimeout(tick, 2000);
+    }
+  };
+  tick();
+}
+
+function renderDataJob(job) {
+  document.getElementById('data-progress').style.display = 'block';
+  document.getElementById('data-progress-bar').style.width = (job.progress || 0) + '%';
+  document.getElementById('data-progress-pct').textContent = (job.progress || 0) + '%';
+
+  const running = (job.steps || []).find(s => s.status === 'running');
+  const label = job.status === 'running'
+    ? (running ? running.label + '…' : 'Выполняется…')
+    : job.status === 'done' ? 'Готово' : 'Ошибка';
+  document.getElementById('data-progress-label').textContent = label;
+
+  document.getElementById('data-steps').innerHTML = (job.steps || []).map(s => {
+    const color = s.status === 'pending' ? '#94a3b8'
+                : s.status === 'error'   ? '#dc2626' : '#334155';
+    return `<div style="color:${color}">${DATA_STEP_ICON[s.status] || ''} ${s.label}` +
+           (s.detail ? `<span style="color:#94a3b8"> — ${s.detail}</span>` : '') + `</div>`;
+  }).join('');
+
+  if (job.log && job.log.length) {
+    document.getElementById('data-log-wrap').style.display = 'block';
+    document.getElementById('data-log').textContent = job.log.join('\n');
+  }
+
+  if (job.status === 'running') return;
+  renderDataReport(job);
+}
+
+function renderDataReport(job) {
+  const box = document.getElementById('data-report');
+  box.style.display = 'block';
+  const res = job.result || {};
+
+  if (job.status === 'error') {
+    box.innerHTML =
+      `<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:14px 16px">` +
+      `<div style="font-weight:700;color:#b91c1c;margin-bottom:4px">Обновление не выполнено</div>` +
+      `<div style="font-size:13px;color:#7f1d1d">${job.error || 'неизвестная ошибка'}</div>` +
+      (res.backup_table
+        ? `<div style="font-size:12px;color:#7f1d1d;margin-top:8px">Резервная копия: <code>${res.backup_table}</code></div>`
+        : `<div style="font-size:12px;color:#7f1d1d;margin-top:8px">Данные не изменены.</div>`) +
+      `</div>`;
+    return;
+  }
+
+  const before = res.before || {}, after = res.after || {};
+  const d = (a, b) => {
+    const diff = (b || 0) - (a || 0);
+    if (!diff) return '<span style="color:#94a3b8">без изменений</span>';
+    const color = diff > 0 ? '#059669' : '#b45309';
+    return `<span style="color:${color}">${diff > 0 ? '+' : ''}${_nf(diff)}</span>`;
+  };
+
+  const tile = (val, label, sub, color) =>
+    `<div style="flex:1;min-width:120px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px">` +
+    `<div style="font-size:20px;font-weight:700;color:${color || '#0f172a'};font-variant-numeric:tabular-nums">${val}</div>` +
+    `<div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-top:2px">${label}</div>` +
+    (sub ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px">${sub}</div>` : '') +
+    `</div>`;
+
+  const geo = (job.steps || []).find(s => s.key === 'geocode') || {};
+  const geoFailed = geo.status === 'error';
+  box.innerHTML =
+    `<div style="border:1px solid ${geoFailed ? '#fde68a' : '#bbf7d0'};background:${geoFailed ? '#fffbeb' : '#f0fdf4'};border-radius:10px;padding:14px 16px">` +
+      `<div style="font-weight:700;color:${geoFailed ? '#92400e' : '#166534'};margin-bottom:10px">` +
+        (geoFailed ? 'Данные обновлены, геокодирование не выполнено' : 'Обновление завершено') +
+      `</div>` +
+      (geoFailed
+        ? `<div style="font-size:12px;color:#92400e;margin-bottom:10px">${res.geocode_error || ''}<br>` +
+          `Координаты новых точек добавятся при следующем запуске с рабочим ключом.</div>`
+        : '') +
+      `<div style="display:flex;gap:10px;flex-wrap:wrap">` +
+        tile(_nf(res.inserted || 0), 'добавлено', 'новых отделений', '#059669') +
+        tile(_nf(res.updated || 0), 'обновлено', 'существующих') +
+        tile(_nf(res.deleted || 0), 'удалено', 'нет в выгрузке', (res.deleted ? '#b45309' : '#0f172a')) +
+        (res.geocoded != null
+          ? tile(_nf(res.geocoded), 'геокодировано', `не найдено ${_nf(res.geocode_missed || 0)}`)
+          : tile(geoFailed ? '!' : '—', 'геокодирование',
+                 geo.detail || 'пропущено', geoFailed ? '#b45309' : '#94a3b8')) +
+      `</div>` +
+      `<div style="margin-top:12px;font-size:13px;color:#334155;line-height:1.9">` +
+        `<div>Отделений: ${_nf(before.rows || 0)} → <b>${_nf(after.rows || 0)}</b> ${d(before.rows, after.rows)}</div>` +
+        `<div>Учреждений: ${_nf(before.orgs || 0)} → <b>${_nf(after.orgs || 0)}</b> ${d(before.orgs, after.orgs)}</div>` +
+        `<div>Без координат: ${_nf(before.no_coords || 0)} → <b>${_nf(after.no_coords || 0)}</b> ${d(before.no_coords, after.no_coords)}</div>` +
+      `</div>` +
+      `<div style="margin-top:10px;font-size:11px;color:#64748b">` +
+        (res.file ? `Файл выгрузки: <code>${res.file}</code><br>` : '') +
+        (res.backup_table ? `Резервная копия: <code>${res.backup_table}</code>` : '') +
+      `</div>` +
+    `</div>`;
+}
+
 </script>
 </body>
 </html>
