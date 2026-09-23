@@ -43,19 +43,34 @@ printf '%s\n' "$VPN_PASSWORD" | openconnect \
         exit 1
     }
 
-# Ждём появления туннельного интерфейса — openconnect уходит в фон раньше,
-# чем маршруты реально прописаны.
+# Ждём, пока туннель станет РАБОЧИМ: у tun0 есть адрес, и маршрут до базы
+# идёт через него. Одного появления tun0 мало — openconnect создаёт интерфейс
+# раньше, чем vpnc-script пропишет на нём адрес и маршруты. Разрыв особенно
+# заметен, когда DTLS не проходит и клиент откатывается на TLS: тогда настройка
+# запаздывает секунд на пятнадцать, и запрос, отправленный сразу, уходит мимо
+# туннеля через eth0 и падает по таймауту.
+TARGET="${PROON_HOST:-}"
 i=0
-while [ $i -lt 30 ]; do
-    if ip link show tun0 >/dev/null 2>&1; then
-        echo "[vpn] туннель поднят:"
-        ip -4 addr show tun0 | sed 's/^/[vpn]   /'
-        exit 0
+while [ $i -lt 45 ]; do
+    if ip -4 addr show tun0 2>/dev/null | grep -q "inet "; then
+        if [ -z "$TARGET" ] || ip route get "$TARGET" 2>/dev/null | grep -q "dev tun0"; then
+            echo "[vpn] туннель поднят:"
+            ip -4 addr show tun0 | sed 's/^/[vpn]   /'
+            if [ -n "$TARGET" ]; then
+                echo "[vpn] маршрут до базы: $(ip route get "$TARGET" | head -n 1)"
+            fi
+            exit 0
+        fi
     fi
     i=$((i + 1))
     sleep 1
 done
 
-echo "[vpn] ОШИБКА: интерфейс tun0 не появился за 30 секунд" >&2
+echo "[vpn] ОШИБКА: туннель не стал рабочим за 45 секунд" >&2
+echo "[vpn] адрес tun0:" >&2
+ip -4 addr show tun0 >&2 2>&1 || echo "[vpn]   интерфейса нет" >&2
+if [ -n "$TARGET" ]; then
+    echo "[vpn] маршрут до базы: $(ip route get "$TARGET" 2>&1 | head -n 1)" >&2
+fi
 tail -n 25 "$LOG" >&2
 exit 1
