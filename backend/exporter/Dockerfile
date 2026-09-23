@@ -18,7 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir "psycopg[binary]==3.2.3" openpyxl==3.1.5
+# --trusted-host нужен так же, как в backend/Dockerfile: корпоративная сеть
+# перехватывает TLS своим корневым сертификатом, и проверка pypi не проходит.
+RUN pip install --no-cache-dir \
+    --trusted-host pypi.org \
+    --trusted-host pypi.python.org \
+    --trusted-host files.pythonhosted.org \
+    "psycopg[binary]==3.2.3" openpyxl==3.1.5
 
 # Контекст сборки — корень репозитория:
 #   docker build -t cossu-exporter -f backend/exporter/Dockerfile .
