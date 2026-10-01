@@ -3395,6 +3395,9 @@ async function importKandasFile(input) {
       return;
     }
     let msg = `Готово: добавлено ${data.inserted}, обновлено ${data.updated}.`;
+    if (data.applications != null) {
+      msg += `\nЗаявок в файле (по номеру C_ID): ${data.applications}.`;
+    }
     if (data.skipped_groups) {
       msg += `\n\nПропущено групп без главного заявителя: ${data.skipped_groups}.`
            + '\nВ таких строках APPLICANT=1 нет — это неполнота выгрузки, не ошибка загрузки.';
@@ -3499,23 +3502,35 @@ function _matchRegionToDropdown(region, allRegions) {
   }) || region;
 }
 
+// Ключ заявки для подсчёта. Заявка — уникальный номер C_ID из выгрузки: одна
+// заявка может объединять несколько записей (несколько APP_ID). У записей без
+// номера (загружены до появления C_ID, резиденты) каждая запись — своя заявка.
+function _kandasAppKey(k) {
+  const cid = k.extra && k.extra.c_id;
+  return cid ? 'c:' + cid : 'k:' + k.id;
+}
+
 function updateKandasStats() {
   if (!kandasData) return;
-  // Кандасы без координат
-  const unknownCount = kandasData.filter(k => k.lat == null || k.lon == null).length;
+  // Заявки без координат
+  const unknownCount = new Set(
+    kandasData.filter(k => k.lat == null || k.lon == null).map(_kandasAppKey)
+  ).size;
 
   // Регионы из дропдауна. Кандасы — только активные области; резиденты — все.
   const allRegions = Array.from(
     document.querySelectorAll('#goto-region option[value]:not([value=""])')
   ).map(o => o.value).filter(r => _isPmzView() || _isKandasActiveOblastName(r));
-  // Подсчёт кандасов по полю oblast (только в активных областях)
-  const counts = {};
-  for (const r of allRegions) counts[r] = 0;
+  // Подсчёт заявок по полю oblast (только в активных областях)
+  const regionKeys = {};
+  for (const r of allRegions) regionKeys[r] = new Set();
   for (const k of kandasData) {
     const matched = _matchRegionToDropdown(k.oblast, allRegions);
-    if (!matched || !counts.hasOwnProperty(matched)) continue;
-    counts[matched] = (counts[matched] || 0) + 1;
+    if (!matched || !regionKeys.hasOwnProperty(matched)) continue;
+    regionKeys[matched].add(_kandasAppKey(k));
   }
+  const counts = {};
+  for (const r of allRegions) counts[r] = regionKeys[r].size;
   // Сортировка: сначала с кандасами (> 0), потом нулевые
   const lines = Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
@@ -3525,7 +3540,7 @@ function updateKandasStats() {
     })
     .join('<br>');
 
-  const totalCount = kandasData.length;
+  const totalCount = new Set(kandasData.map(_kandasAppKey)).size;
   // Члены семьи приходят вложенным списком extra.family у главного кандаса
   // (строки выгрузки с APPLICANT=0). Считаем самого кандаса + его семью.
   const withFamily = kandasData.reduce((sum, k) => {
@@ -3546,7 +3561,7 @@ function updateKandasStats() {
 // Единый маппинг меток и порядок отображения полей extra для кандасов
 const KANDAS_FIELD_ORDER = [
   // Простые поля из нового xlsx
-  'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz', 'polyclinic',
+  'c_id', 'family_type', 'occupation', 'working', 'avto', 'nedv', 'smz', 'polyclinic',
   // Легаси-поля (старые kandas)
   'bin_work',    'work_org',    'oked',        'work_address', 'position',
   'staff_pos',   'work_type',   'specialty',
@@ -3555,6 +3570,7 @@ const KANDAS_FIELD_ORDER = [
 ];
 const KANDAS_FIELD_LABELS = {
   // Новые поля
+  c_id:        'Номер заявки',
   family_type: 'Семейное положение',
   occupation:  'Род занятий',
   working:     'Трудоустроен',

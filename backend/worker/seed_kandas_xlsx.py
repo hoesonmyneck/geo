@@ -89,6 +89,13 @@ def _s(v) -> str | None:
     return s
 
 
+def _id(v) -> str | None:
+    """Идентификатор в строку: Excel может отдать 5159118 как 5159118.0."""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return _s(v)
+
+
 def _iin(v) -> str | None:
     """Нормализация ИИН: всегда 12 цифр строкой (xlsx может хранить как число)."""
     if v is None:
@@ -249,6 +256,9 @@ def _build_main_kandas(rows: list[dict], family: list[dict]) -> dict:
                 labor_contracts.append(lc)
 
     extra = {
+        # Номер заявки. По нему считается количество заявок: одна заявка может
+        # объединять несколько APP_ID (на 01.10.2026 так у одной из 19).
+        "c_id":            _id(base.get("C_ID")),
         "nationality":     None,  # в новом xlsx нет — оставим если будет в будущем
         "family":          family,
         "anketa":          _build_anketa(base),
@@ -358,6 +368,11 @@ async def main():
             kandas_records.append(_build_main_kandas(rs, family))
 
     print(f"\nГотово к загрузке: {len(kandas_records)} главных кандасов")
+    c_ids = {k["extra"]["c_id"] for k in kandas_records if k["extra"].get("c_id")}
+    if c_ids:
+        print(f"Заявок по C_ID: {len(c_ids)}")
+    else:
+        print("Колонки C_ID в файле нет — заявки будут считаться по записям")
 
     if only_iins:
         kandas_records = [k for k in kandas_records if k["iin"] in only_iins]

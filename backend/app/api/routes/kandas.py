@@ -349,11 +349,15 @@ async def import_registry(
     m = re.search(r"Done:\s*(\d+)\s+inserted,\s*(\d+)\s+updated", log)
     inserted, updated = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
     skipped = len(re.findall(r"нет главного кандаса", log))
+    # Сколько уникальных заявок (C_ID) в файле — None, если колонки нет
+    m = re.search(r"Заявок по C_ID:\s*(\d+)", log)
+    applications = int(m.group(1)) if m else None
     return {
         "ok": True,
         "kind": target,
         "inserted": inserted,
         "updated": updated,
+        "applications": applications,
         "skipped_groups": skipped,
         "file": os.path.basename(dest),
         "log": log[-4000:],
